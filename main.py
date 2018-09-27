@@ -10,6 +10,38 @@ import argparse
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+def train(model, train_data, config):
+    slot_loss_function = nn.CrossEntropyLoss(ignore_index=0)
+    intent_loss_function = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=config.lr)
+    scheduler = optim.lr_scheduler.MultiStepLR(gamma=0.1, milestones=[config.epochs // 4, config.epochs // 2],
+                                               optimizer=optimizer)
+
+    model.train()
+    for epoch in range(config.epochs):
+        losses = []
+        scheduler.step()
+        for i, batch in enumerate(data_loader(train_data, config.batch_size, True)):
+            h, c, slot, intent = pad_to_batch(batch, model.vocab, model.slot_vocab)
+            h = [hh.to(device) for hh in h]
+            c = c.to(device)
+            slot = slot.to(device)
+            intent = intent.to(device)
+            model.zero_grad()
+            slot_p, intent_p = model(h, c)
+
+            loss_s = slot_loss_function(slot_p, slot.view(-1))
+            loss_i = intent_loss_function(intent_p, intent.view(-1))
+            loss = loss_s + loss_i
+            losses.append(loss.item())
+            loss.backward()
+            optimizer.step()
+
+            if i % 100 == 0:
+                print("[%d/%d] [%d/%d] mean_loss : %.3f" % \
+                      (epoch, config.epochs, i, len(train_data) // config.batch_size, np.mean(losses)))
+                losses = []
+
 
 def evaluation(model,dev_data):
     model.eval()
@@ -88,36 +120,8 @@ if __name__ == "__main__":
     model.vocab = word2index
     model.slot_vocab = slot2index
     model.intent_vocab = intent2index
-    
-    slot_loss_function = nn.CrossEntropyLoss(ignore_index=0)
-    intent_loss_function = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(),lr=config.lr)
-    scheduler = optim.lr_scheduler.MultiStepLR(gamma=0.1,milestones=[config.epochs//4,config.epochs//2],optimizer=optimizer)
-    
-    model.train()
-    for epoch in range(config.epochs):
-        losses=[]
-        scheduler.step()
-        for i,batch in enumerate(data_loader(train_data,config.batch_size,True)):
-            h,c,slot,intent = pad_to_batch(batch,model.vocab,model.slot_vocab)
-            h = [hh.to(device) for hh in h]
-            c = c.to(device)
-            slot = slot.to(device)
-            intent = intent.to(device)
-            model.zero_grad()
-            slot_p, intent_p = model(h,c)
 
-            loss_s = slot_loss_function(slot_p,slot.view(-1))
-            loss_i = intent_loss_function(intent_p,intent.view(-1))
-            loss = loss_s + loss_i
-            losses.append(loss.item())
-            loss.backward()
-            optimizer.step()
-
-            if i % 100 == 0:
-                print("[%d/%d] [%d/%d] mean_loss : %.3f" % \
-                      (epoch,config.epochs,i,len(train_data)//config.batch_size,np.mean(losses)))
-                losses=[]
-                      
-    evaluation(model,dev_data)
-    save(model,config)
+    if config.mode == 'train':
+        train(model, train_data, config)
+        save(model, config)
+    evaluation(model, dev_data)
