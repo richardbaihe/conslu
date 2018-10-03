@@ -3,17 +3,22 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from copy import deepcopy
-import random
+import random, queue
 from tqdm import tqdm
 flatten = lambda l: [item for sublist in l for item in sublist]
 
 
-def prepare_dataset(path,built_vocab=None,user_only=False):
+def prepare_dataset(path,built_vocab=None,user_only=False,slm=False):
     data = open(path,"r",encoding="utf-8").readlines()
-    p_data=[]
+    p_data = []
+    c_data = []
     history=[["<null>"]]
     for d in data:
         if d=="\n":
+            if slm:
+                temp = deepcopy(history)
+                for i in range(1,len(history)):
+                    c_data.append([temp[:i],temp[i:]])
             history=[["<null>"]]
             continue
         dd = d.replace("\n","").split("|||")
@@ -30,7 +35,6 @@ def prepare_dataset(path,built_vocab=None,user_only=False):
             temp = deepcopy(history)
             p_data.append([temp,user,tag,intent])
             history.append(user)
-    
     if built_vocab is None:
         historys, currents, slots, intents = list(zip(*p_data))
         vocab = list(set(flatten(currents)))
@@ -61,11 +65,17 @@ def prepare_dataset(path,built_vocab=None,user_only=False):
         t[1] = prepare_sequence(t[1], word2index).view(1, -1)
         t[2] = prepare_sequence(t[2], slot2index).view(1, -1)
         t[3] = torch.LongTensor([intent2index[t[3]]]).view(1,-1)
-            
+    if slm:
+        for t in tqdm(c_data):
+            for i, history in enumerate(t[0]):
+                t[0][i] = prepare_sequence(history, word2index).view(1, -1)
+            for i, candidate in enumerate(t[1]):
+                t[1][i] = prepare_sequence(candidate, word2index).view(1, -1)
+            t.append(torch.LongTensor([1]+[0 for i in range(i-1)]).view(1, -1))
     if built_vocab is None:
-        return p_data, word2index, slot2index, intent2index
+        return p_data,c_data, word2index, slot2index, intent2index
     else:
-        return p_data
+        return p_data,c_data
 
 def prepare_sequence(seq, to_index):
     idxs = list(map(lambda w: to_index[w] if to_index.get(w) is not None else to_index["<unk>"], seq))
@@ -85,6 +95,57 @@ def data_loader(train_data,batch_size,shuffle=False):
     if eindex >= len(train_data):
         batch = train_data[sindex:]
         yield batch
+
+
+def pad_to_batch_slm(batch, w_to_ix):  # for bAbI dataset
+    history, candidate, label = list(zip(*batch))
+
+    max_history = max([len(h) for h in history])
+    max_len = max([h.size(1) for h in flatten(history)])
+    max_candidate = max([len(h) for h in candidate])
+    max_len_candidate = max([h.size(1) for h in flatten(candidate)])
+
+    historys, candidates, labels = [], [], []
+    for i in range(len(batch)):
+        history_p_t = []
+        for j in range(len(history[i])):
+            if history[i][j].size(1) < max_len:
+                history_p_t.append(torch.cat([history[i][j], torch.LongTensor(
+                    [w_to_ix['<pad>']] * (max_len - history[i][j].size(1))).view(1, -1)], 1))
+            else:
+                history_p_t.append(history[i][j])
+
+        while len(history_p_t) < max_history:
+            history_p_t.append(torch.LongTensor([w_to_ix['<pad>']] * max_len).view(1, -1))
+
+        history_p_t = torch.cat(history_p_t)
+        historys.append(history_p_t)
+
+        candidate_p_t = []
+        for j in range(len(candidate[i])):
+            if candidate[i][j].size(1) < max_len_candidate:
+                candidate_p_t.append(torch.cat([candidate[i][j], torch.LongTensor(
+                    [w_to_ix['<pad>']] * (max_len_candidate - candidate[i][j].size(1))).view(1, -1)], 1))
+            else:
+                candidate_p_t.append(candidate[i][j])
+
+        while len(candidate_p_t) < max_candidate:
+            candidate_p_t.append(torch.LongTensor([w_to_ix['<pad>']] * max_len_candidate).view(1, -1))
+
+        candidate_p_t = torch.cat(candidate_p_t)
+        candidates.append(candidate_p_t)
+
+        if label[i].size(1) < max_candidate:
+            labels.append(torch.cat(
+                [label[i], torch.LongTensor([0] * (max_candidate - label[i].size(1))).view(1, -1)], 1))
+        else:
+            labels.append(label[i])
+
+    labels = torch.cat(labels)
+
+    return historys, candidates, labels
+
+
 
 def pad_to_batch(batch, w_to_ix,s_to_ix): # for bAbI dataset
     history,current,slot,intent = list(zip(*batch))

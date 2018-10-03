@@ -42,6 +42,72 @@ def train(model, train_data, config):
                       (epoch, config.epochs, i, len(train_data) // config.batch_size, np.mean(losses)))
                 losses = []
 
+def train_multitask(model,train_data,dev_data,config):
+    train_data_1, train_data_2 = train_data
+    dev_data_1, dev_data_2 = dev_data
+    slm_loss = nn.CrossEntropyLoss()
+    slot_loss_function = nn.CrossEntropyLoss(ignore_index=0)
+    intent_loss_function = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=config.lr)
+    scheduler = optim.lr_scheduler.MultiStepLR(gamma=0.1, milestones=[config.epochs // 4, config.epochs // 2],
+                                               optimizer=optimizer)
+
+    model.train()
+    for epoch in range(config.epochs):
+        losses = []
+        scheduler.step()
+        for i, (batch_1,batch_2) in enumerate(zip(data_loader(train_data_1, config.batch_size, True),
+                                                  data_loader(train_data_2, config.batch_size, True))):
+            h, c, slot, intent = pad_to_batch(batch_1, model.vocab, model.slot_vocab)
+            h = [hh.to(device) for hh in h]
+            c = c.to(device)
+            slot = slot.to(device)
+            intent = intent.to(device)
+
+            slm_h, slm_candi, slm_label = pad_to_batch_slm(batch_2, model.vocab)
+            slm_h = [hh.to(device) for hh in slm_h]
+            slm_candi = [hh.to(device) for hh in slm_candi]
+            slm_label = slm_label.to(device)
+
+            model.zero_grad()
+            slot_p, intent_p = model(h, c)
+            slm_p = model(slm_h,slm_candi,slm=True)
+
+            loss_s = slot_loss_function(slot_p, slot.view(-1))
+            loss_i = intent_loss_function(intent_p, intent.view(-1))
+            loss_slm = slm_loss(slm_p.view(-1,2),slm_label.view(-1))
+            loss = loss_s + loss_i + loss_slm
+            losses.append(loss.item())
+            loss.backward()
+            optimizer.step()
+
+            if i % 100 == 0:
+                print("[%d/%d] [%d/%d] mean_loss : %.3f" % \
+                      (epoch, config.epochs, i, len(train_data) // config.batch_size, np.mean(losses)))
+                losses = []
+            evaluation_slm(model,dev_slm_data)
+            evaluation(model,dev_data)
+def evaluation_slm(model,dev_data):
+    model.eval()
+    pos = 0
+    hits = 0
+    total = 0
+    total_pos = 0
+    with torch.no_grad():
+        for i, batch in enumerate(data_loader(dev_data, 32, True)):
+            slm_h, slm_candi, slm_label = pad_to_batch_slm(batch, model.vocab)
+            slm_h = [hh.to(device) for hh in slm_h]
+            slm_candi = [hh.to(device) for hh in slm_candi]
+            slm_label = slm_label.to(device)
+            slm_p = model(slm_h, slm_candi, slm=True)
+            correct = torch.eq(slm_p.max(1)[1], slm_label.view(-1))
+            hits += correct.sum().item()
+            total += slm_label.shape[0]
+            pos += torch.eq(correct,slm_label.view(-1)).sum().item()
+            total_pos += slm_label.sum().item()
+    print('slm accuracy:\t%.5f' % hits/total)
+    print('slm recall:\t%.5f' % pos/total_pos)
+
 
 def evaluation(model,dev_data):
     model.eval()
@@ -63,7 +129,7 @@ def evaluation(model,dev_data):
             hits+=torch.eq(intent_p.max(1)[1],intent.view(-1)).sum().item()
 
 
-    print(hits/len(dev_data))
+    print('intent accuracy:\t%.5f' % hits/len(dev_data))
     
     sorted_labels = sorted(
     list(set(labels) - {'O','<pad>'}),
@@ -109,19 +175,26 @@ if __name__ == "__main__":
                         help='hidden_size')
     parser.add_argument('--save_path', type=str, default='weight/model.pkl',
                         help='save_path')
-    
+    parser.add_argument('--model', type=str, default='sden',
+                        help='seq2seq, memory, sden' )
+    parser.add_argument('--slm',type=bool, default=False,
+                        help='whether sentence level language model training or not')
     config = parser.parse_args()
     
-    train_data, word2index, slot2index, intent2index = prepare_dataset('data/train.iob')
-    dev_data = prepare_dataset('data/dev.iob',(word2index,slot2index,intent2index))
-    model = SDEN(len(word2index),config.embed_size,config.hidden_size,\
-                 len(slot2index),len(intent2index),word2index['<pad>'])
+    train_data, train_slm_data, word2index, slot2index, intent2index = prepare_dataset('data/train.iob',slm=config.slm)
+    dev_data, dev_slm_data = prepare_dataset('data/dev.iob',(word2index,slot2index,intent2index),slm=config.slm)
+    if config.model == 'sden':
+        model = SDEN(len(word2index),config.embed_size,config.hidden_size,\
+                     len(slot2index),len(intent2index),word2index['<pad>'])
     model.to(device)
     model.vocab = word2index
     model.slot_vocab = slot2index
     model.intent_vocab = intent2index
 
     if config.mode == 'train':
-        train(model, train_data, config)
+        if config.slm:
+            train_multitask(model,(train_data,train_slm_data),(dev_data,dev_slm_data),config)
+        else:
+            train(model, train_data,dev_data, config)
         save(model, config)
     evaluation(model, dev_data)
