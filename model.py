@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_packed_sequence as unpack
 from torch.nn.utils.rnn import pack_padded_sequence as pack
-
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 class SDEN(nn.Module):
     def __init__(self,vocab_size,embed_size,hidden_size,slot_size,intent_size,dropout=0.3,pad_idx=0):
         super(SDEN,self).__init__()
@@ -83,7 +83,7 @@ class SDEN(nn.Module):
         if slm:
             h_slm = torch.cat([h for h in H], -1)  # B, 4H
             slm_pro = self.slm_linear(h_slm)
-            mask = torch.stack([torch.eq(length,0).float(),torch.zeros(length.shape).float()],1)
+            mask = torch.cuda.stack([torch.eq(length,0).float(),torch.zeros(length.shape).float().to(device)],1)
             slm_pro = (slm_pro+mask).view(batch_size,-1,2)
             return slm_pro
 
