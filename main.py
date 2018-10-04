@@ -37,7 +37,7 @@ def train(model, train_data, config):
             optimizer.step()
 
             if i % 100 == 0:
-                print("[%d/%d] [%d/%d] mean_loss : %.3f" % \
+                print("[%d/%d] [%d/%d] mean_loss : %:.3f" % \
                       (epoch, config.epochs, i, len(train_data) // config.batch_size, np.mean(losses)))
                 losses = []
 
@@ -202,7 +202,7 @@ def save(model,config):
 
 def log_printer(name, metrics, loss, epoch=None, iters=None):
     if name == 'train':
-        print("{}\tepoch : {}\titer : {}\tintent_acc : {.3f}\tslot_f1 : {.3f}\tslm_acc : {.3f}\tslm_r : {.3f}\tloss_all : {.3f}\tloss_slm : {.3f}\tloss_slu : {.3f}".format(
+        print("{}\tepoch : {}\titer : {}\tintent_acc : {:.3f}\tslot_f1 : {:.3f}\tslm_acc : {:.3f}\tslm_r : {:.3f}\tloss_all : {:.3f}\tloss_slm : {:.3f}\tloss_slu : {:.3f}".format(
             name, epoch, iters, metrics[0], metrics[1], metrics[2], metrics[3], loss[0], loss[1], loss[2]
         ))
         step = int(iters.split('/')[0]) + int(iters.split('/')[1]) * (int(epoch.split('/')[0])-1)
@@ -212,10 +212,10 @@ def log_printer(name, metrics, loss, epoch=None, iters=None):
 
     else:
         if loss == None:
-            print("{}\tintent_acc : {.3f}\tslot_f1 : {.3f}\tslm_acc : {.3f}\tslm_r : {.3f}".format(
+            print("{}\tintent_acc : {:.3f}\tslot_f1 : {:.3f}\tslm_acc : {:.3f}\tslm_r : {:.3f}".format(
                 name, metrics[0], metrics[1], metrics[2], metrics[3]))
         else:
-            print("{}\tintent_acc : {.3f}\tslot_f1 : {.3f}\tslm_acc : {.3f}\tslm_r : {.3f}\tloss_all : {.3f}\tloss_slm : {.3f}\tloss_slu : {.3f}".format(
+            print("{}\tintent_acc : {:.3f}\tslot_f1 : {:.3f}\tslm_acc : {:.3f}\tslm_r : {:.3f}\tloss_all : {:.3f}\tloss_slm : {:.3f}\tloss_slu : {:.3f}".format(
                 name, metrics[0], metrics[1], metrics[2], metrics[3], loss[0], loss[1], loss[2]))
         if iters != None and epoch != None and loss != None:
             step = int(iters.split('/')[0]) + int(iters.split('/')[1]) * (int(epoch.split('/')[0])-1)
@@ -247,6 +247,8 @@ if __name__ == "__main__":
                         help='seq2seq, memory, sden' )
     parser.add_argument('--slm',type=bool, default=False,
                         help='whether sentence level language model training or not')
+    parser.add_argument('--slm_weight',type=float, default=0,
+                        help='slm weight')
     parser.add_argument('--tensorboard',type=str, default='logs',
                         help='path for logs')
     config = parser.parse_args()
