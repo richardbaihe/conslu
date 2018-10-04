@@ -37,7 +37,7 @@ def train(model, train_data, config):
             optimizer.step()
 
             if i % 100 == 0:
-                print("[%d/%d] [%d/%d] mean_loss : %:.3f" % \
+                print("[%d/%d] [%d/%d] mean_loss: %:.3f" % \
                       (epoch, config.epochs, i, len(train_data) // config.batch_size, np.mean(losses)))
                 losses = []
 
@@ -87,8 +87,7 @@ def train_multitask(model,train_data,dev_data,config):
 
             if i % 100 == 0:
                 #SLU
-                hits = torch.eq(intent_p.max(1)[1], intent.view(-1)).sum().item()
-                intent_acc = hits / config.batch_size
+                intent_acc = accuracy_score(intent.view(-1).tolist(), intent_p.max(1)[1].tolist())
                 slot_f1 = f1_score(slot.view(-1).tolist(),slot_p.max(1)[1].tolist(),average='micro')
                 #SLM
                 label = slm_label.view(-1).tolist()
@@ -105,9 +104,9 @@ def train_multitask(model,train_data,dev_data,config):
                 losses_slm = []
         metric, loss = evaluation_multi(model, dev_data_1, dev_data_2)
         log_printer('eval', epoch="{}/{}".format(epoch, config.epochs),
-                    iters="{}/{}".format(i, len(train_data_1) // config.batch_size),
-                    metrics=metric,
-                    loss=loss)
+            iters="{}/{}".format(i, len(train_data_1) // config.batch_size),
+            metrics=metric,
+            loss=loss)
     evaluation(model, dev_data_1)
 
 def evaluation_multi(model,dev_data_1,dev_data_2):
@@ -130,8 +129,11 @@ def evaluation_multi(model,dev_data_1,dev_data_2):
             intent = intent.to(device)
             slot_p, intent_p = model(h,c)
 
-            hits = torch.eq(intent_p.max(1)[1], intent.view(-1)).sum().item()
-            intent_acc.append(hits / config.batch_size)
+            label = intent.view(-1).tolist()
+            pred = intent_p.max(1)[1].tolist()
+            intent_acc.append(accuracy_score(label,pred))
+            # hits = torch.eq(intent_p.max(1)[1], intent.view(-1)).sum().item()
+            # intent_acc.append(hits / 32)
             slot_f1 = f1_score(slot.view(-1).tolist(), slot_p.max(1)[1].tolist(), average='micro')
             loss_s = slot_loss_function(slot_p, slot.view(-1))
             loss_i = intent_loss_function(intent_p, intent.view(-1))
@@ -144,8 +146,8 @@ def evaluation_multi(model,dev_data_1,dev_data_2):
             slm_p = model(slm_h, slm_candi, slm=True).view(-1,2)
             label = slm_label.view(-1).tolist()
             pred = slm_p.max(1)[1].tolist()
-            slm_acc = accuracy_score(label, pred)
-            slm_recall = recall_score(label, pred)
+            slm_acc.append(accuracy_score(label, pred))
+            slm_recall.append(recall_score(label, pred))
             loss_slm = slm_loss(slm_p,slm_label.view(-1))
             losses_slm.append(loss_slm.item())
 
@@ -193,16 +195,16 @@ def save(model,config):
     checkpoint = {
                 'model': model.state_dict(),
                 'vocab': model.vocab,
-                'slot_vocab' : model.slot_vocab,
-                'intent_vocab' : model.intent_vocab,
-                'config' : config,
+                'slot_vocab': model.slot_vocab,
+                'intent_vocab': model.intent_vocab,
+                'config': config,
             }
     torch.save(checkpoint,config.save_path)
     print("Model saved!")
 
 def log_printer(name, metrics, loss, epoch=None, iters=None):
     if name == 'train':
-        print("{}\tepoch : {}\titer : {}\tintent_acc : {:.3f}\tslot_f1 : {:.3f}\tslm_acc : {:.3f}\tslm_r : {:.3f}\tloss_all : {:.3f}\tloss_slm : {:.3f}\tloss_slu : {:.3f}".format(
+        print("{}\tepoch: {}\titer: {}\nintent_acc: {:.3f}\tslot_f1: {:.3f}\tslm_acc: {:.3f}\tslm_r: {:.3f}\tloss_all: {:.3f}\tloss_slm: {:.3f}\tloss_slu: {:.3f}".format(
             name, epoch, iters, metrics[0], metrics[1], metrics[2], metrics[3], loss[0], loss[1], loss[2]
         ))
         step = int(iters.split('/')[0]) + int(iters.split('/')[1]) * (int(epoch.split('/')[0])-1)
@@ -212,10 +214,10 @@ def log_printer(name, metrics, loss, epoch=None, iters=None):
 
     else:
         if loss == None:
-            print("{}\tintent_acc : {:.3f}\tslot_f1 : {:.3f}\tslm_acc : {:.3f}\tslm_r : {:.3f}".format(
+            print("{}\nintent_acc: {:.3f}\tslot_f1: {:.3f}\tslm_acc: {:.3f}\tslm_r: {:.3f}".format(
                 name, metrics[0], metrics[1], metrics[2], metrics[3]))
         else:
-            print("{}\tintent_acc : {:.3f}\tslot_f1 : {:.3f}\tslm_acc : {:.3f}\tslm_r : {:.3f}\tloss_all : {:.3f}\tloss_slm : {:.3f}\tloss_slu : {:.3f}".format(
+            print("{}\nintent_acc: {:.3f}\tslot_f1: {:.3f}\tslm_acc: {:.3f}\tslm_r: {:.3f}\tloss_all: {:.3f}\tloss_slm: {:.3f}\tloss_slu: {:.3f}".format(
                 name, metrics[0], metrics[1], metrics[2], metrics[3], loss[0], loss[1], loss[2]))
         if iters != None and epoch != None and loss != None:
             step = int(iters.split('/')[0]) + int(iters.split('/')[1]) * (int(epoch.split('/')[0])-1)
@@ -271,5 +273,5 @@ if __name__ == "__main__":
             train_multitask(model,(train_data,train_slm_data),(dev_data,dev_slm_data),config)
         else:
             train(model, train_data, config)
+            evaluation(model, dev_data)
         save(model, config)
-    evaluation(model, dev_data)
