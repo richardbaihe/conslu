@@ -78,7 +78,7 @@ def train_multitask(model,train_data,dev_data,config):
             loss_s = slot_loss_function(slot_p, slot.view(-1))
             loss_i = intent_loss_function(intent_p, intent.view(-1))
             loss_slm = slm_loss(slm_p,slm_label.view(-1))
-            loss = loss_s + loss_i + loss_slm
+            loss = loss_s + loss_i + loss_slm*config.slm_weight
             losses_slm.append(loss_slm.item())
             losses_slu.append((loss_s + loss_i).item())
             losses_all.append(loss.item())
