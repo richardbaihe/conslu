@@ -52,8 +52,8 @@ def train_multitask(model,train_data,dev_data,config):
     scheduler = optim.lr_scheduler.MultiStepLR(gamma=0.1, milestones=[config.epochs // 4, config.epochs // 2],
                                                optimizer=optimizer)
 
-    model.train()
     for epoch in range(config.epochs):
+        model.train()
         losses_slu = []
         losses_slm = []
         losses_all = []
@@ -173,8 +173,8 @@ def evaluation(model,dev_data):
             labels.extend([index2slot[i] for i in slot.view(-1).tolist()])
             hits+=torch.eq(intent_p.max(1)[1],intent.view(-1)).sum().item()
 
-
-    print('intent accuracy:\t%.5f' % hits/len(dev_data))
+    intent_acc = hits / len(dev_data)
+    print('intent accuracy:\t%.5f' % intent_acc)
     
     sorted_labels = sorted(
     list(set(labels) - {'O','<pad>'}),
@@ -202,7 +202,7 @@ def save(model,config):
 
 def log_printer(name, metrics, loss, epoch=None, iters=None):
     if name == 'train':
-        print("{}\tEPOCH : {}\tITER : {}\tINTENT_ACC : {}\tSLOT_F1 : {}\tSLM_ACC : {}\tSLM_R : {}\tLOSS_ALL : {}\tLOSS_SLM : {}\tLOSS_SLU : {}".format(
+        print("{}\tepoch : {}\titer : {}\tintent_acc : {.3f}\tslot_f1 : {.3f}\tslm_acc : {.3f}\tslm_r : {.3f}\tloss_all : {.3f}\tloss_slm : {.3f}\tloss_slu : {.3f}".format(
             name, epoch, iters, metrics[0], metrics[1], metrics[2], metrics[3], loss[0], loss[1], loss[2]
         ))
         step = int(iters.split('/')[0]) + int(iters.split('/')[1]) * (int(epoch.split('/')[0])-1)
@@ -212,10 +212,10 @@ def log_printer(name, metrics, loss, epoch=None, iters=None):
 
     else:
         if loss == None:
-            print("INTENT_ACC : {}\tSLOT_F1 : {}\tSLM_ACC : {}\tSLM_R : {}".format(
+            print("{}\tintent_acc : {.3f}\tslot_f1 : {.3f}\tslm_acc : {.3f}\tslm_r : {.3f}".format(
                 name, metrics[0], metrics[1], metrics[2], metrics[3]))
         else:
-            print("INTENT_ACC : {}\tSLOT_F1 : {}\tSLM_ACC : {}\tSLM_R : {}\tLOSS_ALL : {}\tLOSS_SLM : {}\tLOSS_SLU : {}".format(
+            print("{}\tintent_acc : {.3f}\tslot_f1 : {.3f}\tslm_acc : {.3f}\tslm_r : {.3f}\tloss_all : {.3f}\tloss_slm : {.3f}\tloss_slu : {.3f}".format(
                 name, metrics[0], metrics[1], metrics[2], metrics[3], loss[0], loss[1], loss[2]))
         if iters != None and epoch != None and loss != None:
             step = int(iters.split('/')[0]) + int(iters.split('/')[1]) * (int(epoch.split('/')[0])-1)

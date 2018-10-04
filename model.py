@@ -83,7 +83,7 @@ class SDEN(nn.Module):
         if slm:
             h_slm = torch.cat([h for h in H], -1)  # B, 4H
             slm_pro = self.slm_linear(h_slm)
-            mask = torch.cuda.stack([torch.eq(length,0).float(),torch.zeros(length.shape).float().to(device)],1)
+            mask = torch.stack([torch.eq(length,0).float(),torch.zeros(length.shape).float().to(device)],1)
             slm_pro = (slm_pro+mask).view(batch_size,-1,2)
             return slm_pro
 
