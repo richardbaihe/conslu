@@ -107,8 +107,8 @@ def train_multitask(model,train_data,dev_data,config):
                 losses_slu = []
                 losses_slm = []
         metric, loss = evaluation_multi(model, dev_data_1, dev_data_2)
-        if metrics[1]> best_f1:
-            best_f1 = metrics[1]
+        if metric[1]> best_f1:
+            best_f1 = metric[1]
             save(model,config)
         log_printer('eval', epoch="{}/{}".format(epoch, config.epochs),
             iters="{}/{}".format(i, len(train_data_1) // config.batch_size),
