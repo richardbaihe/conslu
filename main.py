@@ -52,6 +52,7 @@ def train_multitask(model,train_data,dev_data,config):
     scheduler = optim.lr_scheduler.MultiStepLR(gamma=0.1, milestones=[config.epochs // 4, config.epochs // 2],
                                                optimizer=optimizer)
 
+    best_f1 = 0
     for epoch in range(config.epochs):
         model.train()
         losses_slu = []
@@ -66,23 +67,26 @@ def train_multitask(model,train_data,dev_data,config):
             slot = slot.to(device)
             intent = intent.to(device)
 
+            model.zero_grad()
+            slot_p, intent_p = model(h, c)
+            loss_s = slot_loss_function(slot_p, slot.view(-1))
+            loss_i = intent_loss_function(intent_p, intent.view(-1))
+            loss_slu = loss_s + loss_i
+            losses_slu.append(loss_slu.item())
+            loss_slu.backward()
+
             slm_h, slm_candi, slm_label = pad_to_batch_slm(batch_2, model.vocab)
             slm_h = [hh.to(device) for hh in slm_h]
             slm_candi = [hh.to(device) for hh in slm_candi]
             slm_label = slm_label.to(device)
-
-            model.zero_grad()
-            slot_p, intent_p = model(h, c)
             slm_p = model(slm_h,slm_candi,slm=True).view(-1,2)
 
-            loss_s = slot_loss_function(slot_p, slot.view(-1))
-            loss_i = intent_loss_function(intent_p, intent.view(-1))
             loss_slm = slm_loss(slm_p,slm_label.view(-1))
-            loss = loss_s + loss_i + loss_slm*config.slm_weight
             losses_slm.append(loss_slm.item())
-            losses_slu.append((loss_s + loss_i).item())
-            losses_all.append(loss.item())
-            loss.backward()
+            loss_slm_decay = loss_slm * config.slm_weight
+            loss_slm_decay.backward()
+
+            losses_all.append(loss_slm_decay.item()+loss_slu.item())
             optimizer.step()
 
             if i % 100 == 0:
@@ -103,6 +107,9 @@ def train_multitask(model,train_data,dev_data,config):
                 losses_slu = []
                 losses_slm = []
         metric, loss = evaluation_multi(model, dev_data_1, dev_data_2)
+        if metrics[1]> best_f1:
+            best_f1 = metrics[1]
+            save(model,config)
         log_printer('eval', epoch="{}/{}".format(epoch, config.epochs),
             iters="{}/{}".format(i, len(train_data_1) // config.batch_size),
             metrics=metric,
@@ -199,31 +206,40 @@ def save(model,config):
                 'intent_vocab': model.intent_vocab,
                 'config': config,
             }
-    torch.save(checkpoint,config.save_path)
+    torch.save(checkpoint,config.save_path+'/model.pkl')
     print("Model saved!")
 
 def log_printer(name, metrics, loss, epoch=None, iters=None):
     if name == 'train':
-        print("{}\tepoch: {}\titer: {}\nintent_acc: {:.3f}\tslot_f1: {:.3f}\tslm_acc: {:.3f}\tslm_r: {:.3f}\tloss_all: {:.3f}\tloss_slm: {:.3f}\tloss_slu: {:.3f}".format(
+        print("=========={}\tepoch: {}\titer: {}==========\nintent_acc: {:.3f}\tslot_f1: {:.3f}\tslm_acc: {:.3f}\tslm_r: {:.3f}\tloss_all: {:.3f}\tloss_slm: {:.3f}\tloss_slu: {:.3f}".format(
             name, epoch, iters, metrics[0], metrics[1], metrics[2], metrics[3], loss[0], loss[1], loss[2]
         ))
         step = int(iters.split('/')[0]) + int(iters.split('/')[1]) * (int(epoch.split('/')[0])-1)
         log.scalar_summary(tag="loss_all", value=loss[0], step=step)
         log.scalar_summary(tag="loss_slm", value=loss[1], step=step)
         log.scalar_summary(tag="loss_slu", value=loss[2], step=step)
+        log.scalar_summary(tag="SLU_ACC", value=metrics[0], step=step)
+        log.scalar_summary(tag="SLU_F1", value=metrics[1], step=step)
+        log.scalar_summary(tag="SLM_ACC", value=metrics[2], step=step)
+        log.scalar_summary(tag="SLM_Recall", value=metrics[3], step=step)
 
     else:
         if loss == None:
-            print("{}\nintent_acc: {:.3f}\tslot_f1: {:.3f}\tslm_acc: {:.3f}\tslm_r: {:.3f}".format(
+            print("===================={}====================\nintent_acc: {:.3f}\tslot_f1: {:.3f}\tslm_acc: {:.3f}\tslm_r: {:.3f}".format(
                 name, metrics[0], metrics[1], metrics[2], metrics[3]))
         else:
-            print("{}\nintent_acc: {:.3f}\tslot_f1: {:.3f}\tslm_acc: {:.3f}\tslm_r: {:.3f}\tloss_all: {:.3f}\tloss_slm: {:.3f}\tloss_slu: {:.3f}".format(
+            print("===================={}====================\nintent_acc: {:.3f}\tslot_f1: {:.3f}\tslm_acc: {:.3f}\tslm_r: {:.3f}\tloss_all: {:.3f}\tloss_slm: {:.3f}\tloss_slu: {:.3f}".format(
                 name, metrics[0], metrics[1], metrics[2], metrics[3], loss[0], loss[1], loss[2]))
         if iters != None and epoch != None and loss != None:
             step = int(iters.split('/')[0]) + int(iters.split('/')[1]) * (int(epoch.split('/')[0])-1)
             log.scalar_summary(tag="valid_loss_all", value=loss[0], step=step)
             log.scalar_summary(tag="valid_loss_slm", value=loss[1], step=step)
             log.scalar_summary(tag="valid_loss_slu", value=loss[2], step=step)
+            log.scalar_summary(tag="vaild_SLU_ACC", value=metrics[0], step=step)
+            log.scalar_summary(tag="vaild_SLU_F1", value=metrics[1], step=step)
+            log.scalar_summary(tag="vaild_SLM_ACC", value=metrics[2], step=step)
+            log.scalar_summary(tag="vaild_SLM_Recall", value=metrics[3], step=step)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -243,7 +259,7 @@ if __name__ == "__main__":
                         help='embed_size')
     parser.add_argument('--hidden_size', type=int, default=64,
                         help='hidden_size')
-    parser.add_argument('--save_path', type=str, default='weight/model.pkl',
+    parser.add_argument('--save_path', type=str, default='weight/',
                         help='save_path')
     parser.add_argument('--model', type=str, default='sden',
                         help='seq2seq, memory, sden' )
@@ -251,10 +267,11 @@ if __name__ == "__main__":
                         help='whether sentence level language model training or not')
     parser.add_argument('--slm_weight',type=float, default=0,
                         help='slm weight')
-    parser.add_argument('--tensorboard',type=str, default='logs',
-                        help='path for logs')
+    parser.add_argument('--model_name',type=str, default='sden_slm0',
+                        help='name of modelfile')
     config = parser.parse_args()
-    
+    config.save_path = config.save_path + config.model_name
+
     train_data, train_slm_data, word2index, slot2index, intent2index = prepare_dataset('data/train.iob',slm=config.slm)
     dev_data, dev_slm_data = prepare_dataset('data/dev.iob',(word2index,slot2index,intent2index),slm=config.slm)
 
@@ -266,7 +283,7 @@ if __name__ == "__main__":
     model.slot_vocab = slot2index
     model.intent_vocab = intent2index
 
-    log = logger.Logger(config.tensorboard)
+    log = logger.Logger(config.save_path)
 
     if config.mode == 'train':
         if config.slm:
@@ -274,4 +291,4 @@ if __name__ == "__main__":
         else:
             train(model, train_data, config)
             evaluation(model, dev_data)
-        save(model, config)
+            save(model, config)
