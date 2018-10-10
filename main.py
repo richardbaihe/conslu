@@ -1,6 +1,6 @@
 import torch.optim as optim
 import numpy as np
-import logger
+import logger,os
 from data_utils import *
 from model import SDEN
 from sklearn_crfsuite import metrics
@@ -52,7 +52,6 @@ def train_multitask(model,train_data,dev_data,config):
     scheduler = optim.lr_scheduler.MultiStepLR(gamma=0.1, milestones=[config.epochs // 4, config.epochs // 2],
                                                optimizer=optimizer)
 
-    best_f1 = 0
     for epoch in range(config.epochs):
         model.train()
         losses_slu = []
@@ -73,7 +72,8 @@ def train_multitask(model,train_data,dev_data,config):
             loss_i = intent_loss_function(intent_p, intent.view(-1))
             loss_slu = loss_s + loss_i
             losses_slu.append(loss_slu.item())
-            loss_slu.backward()
+            losses_slu_decay = (1-config.slm_weight)*loss_slu
+            losses_slu_decay.backward()
 
             slm_h, slm_candi, slm_label = pad_to_batch_slm(batch_2, model.vocab)
             slm_h = [hh.to(device) for hh in slm_h]
@@ -86,7 +86,7 @@ def train_multitask(model,train_data,dev_data,config):
             loss_slm_decay = loss_slm * config.slm_weight
             loss_slm_decay.backward()
 
-            losses_all.append(loss_slm_decay.item()+loss_slu.item())
+            losses_all.append(loss_slm_decay.item()+losses_slu_decay.item())
             optimizer.step()
 
             if i % 100 == 0:
@@ -107,8 +107,8 @@ def train_multitask(model,train_data,dev_data,config):
                 losses_slu = []
                 losses_slm = []
         metric, loss = evaluation_multi(model, dev_data_1, dev_data_2)
-        if metric[1]> best_f1:
-            best_f1 = metric[1]
+        if metric[1]> config.best_score:
+            config.best_score = metric[1]
             save(model,config)
         log_printer('eval', epoch="{}/{}".format(epoch, config.epochs),
             iters="{}/{}".format(i, len(train_data_1) // config.batch_size),
@@ -205,6 +205,7 @@ def save(model,config):
                 'slot_vocab': model.slot_vocab,
                 'intent_vocab': model.intent_vocab,
                 'config': config,
+                'best_score': config.best_score
             }
     torch.save(checkpoint,config.save_path+'/model.pkl')
     print("Model saved!")
@@ -283,6 +284,13 @@ if __name__ == "__main__":
     model.slot_vocab = slot2index
     model.intent_vocab = intent2index
 
+    config.best_score = 0
+    if os.path.exists(config.save_path):
+        print('loading previous model')
+        checkpoint = torch.load(config.save_path + '/model.pkl', map_location=lambda storage, loc: storage)
+        print(checkpoint['config'])
+        model.load_state_dict(checkpoint['model'])
+        config.best_score = checkpoint['best_score']
     log = logger.Logger(config.save_path)
 
     if config.mode == 'train':
