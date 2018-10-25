@@ -2,10 +2,14 @@ import torch.optim as optim
 import numpy as np
 import logger,os
 from data_utils import *
-from model import SDEN
+from model import SDEN, Seq2Seq, Context_Seq2Seq
 from sklearn_crfsuite import metrics
 from sklearn.metrics import f1_score,accuracy_score,recall_score
 import argparse
+
+model_dic = {'sden': SDEN,
+             's2s': Seq2Seq,
+             'context_s2s': Context_Seq2Seq}
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -37,7 +41,7 @@ def train(model, train_data, config):
             optimizer.step()
 
             if i % 100 == 0:
-                print("[%d/%d] [%d/%d] mean_loss: %:.3f" % \
+                print("[%d/%d] [%d/%d] mean_loss: %.3f" % \
                       (epoch, config.epochs, i, len(train_data) // config.batch_size, np.mean(losses)))
                 losses = []
 
@@ -263,7 +267,7 @@ if __name__ == "__main__":
     parser.add_argument('--save_path', type=str, default='weight/',
                         help='save_path')
     parser.add_argument('--model', type=str, default='sden',
-                        help='seq2seq, memory, sden' )
+                        help='s2s, contex_s2s, sden' )
     parser.add_argument('--slm',type=bool, default=False,
                         help='whether sentence level language model training or not')
     parser.add_argument('--slm_weight',type=float, default=0,
@@ -276,16 +280,15 @@ if __name__ == "__main__":
     train_data, train_slm_data, word2index, slot2index, intent2index = prepare_dataset('data/train.iob',slm=config.slm)
     dev_data, dev_slm_data = prepare_dataset('data/dev.iob',(word2index,slot2index,intent2index),slm=config.slm)
 
-    if config.model == 'sden':
-        model = SDEN(len(word2index),config.embed_size,config.hidden_size,\
-                     len(slot2index),len(intent2index),word2index['<pad>'])
+    model = model_dic[config.model](len(word2index),config.embed_size,config.hidden_size,\
+                 len(slot2index),len(intent2index),word2index['<pad>'])
     model.to(device)
     model.vocab = word2index
     model.slot_vocab = slot2index
     model.intent_vocab = intent2index
 
     config.best_score = 0
-    if os.path.exists(config.save_path):
+    if os.path.exists(config.save_path + '/model.pkl'):
         print('loading previous model')
         checkpoint = torch.load(config.save_path + '/model.pkl', map_location=lambda storage, loc: storage)
         print(checkpoint['config'])
