@@ -123,7 +123,7 @@ class Seq2Seq(SDEN):
 class Context_Seq2Seq(SDEN):
     # concat context hidden state with o1 h every step
     def __init__(self, vocab_size, embed_size, hidden_size, slot_size, intent_size, dropout=0.3, pad_idx=0):
-        super(Context_Seq2Seq,self).__init__()
+        super(Context_Seq2Seq,self).__init__(vocab_size, embed_size, hidden_size, slot_size, intent_size, dropout, pad_idx)
         self.decoder_2 = nn.LSTM(hidden_size * 8, hidden_size * 2, batch_first=True, bidirectional=True)
     # context seq2seq
     def forward(self, history, current, slm=False):
@@ -185,7 +185,7 @@ class Context_Seq2Seq(SDEN):
         O_1, _ = self.decoder_1(embeds)
         O_1 = self.dropout(O_1)
 
-        context_H = H.permute(1, 0, 2).contiguous().view(H.size(0), 1, -1)
+        context_H = H.permute(1, 0, 2).contiguous().view(H.size(1), 1, -1)
         context_H = context_H.repeat(1, O_1.size(1), 1)
         O1_context = torch.cat([O_1, context_H], -1)
 
