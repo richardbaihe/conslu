@@ -1,12 +1,146 @@
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import numpy as np
+# import torch.nn as nn
+# import torch.nn.functional as F
+# import numpy as np
 from copy import deepcopy
 import random, queue
 from tqdm import tqdm
-flatten = lambda l: [item for sublist in l for item in sublist]
 
+import json,re
+import spacy
+from spacy.lang.en.stop_words import STOP_WORDS
+from fuzzywuzzy import process, fuzz
+
+flatten = lambda l: [item for sublist in l for item in sublist]
+nlp = spacy.load('en_core_web_sm')
+
+def remove_stop(input):
+    # input: list of str
+    output = [word for word in input if word not in STOP_WORDS]
+    return output
+
+
+def remove_th(input):
+    pattern = re.compile(r'[0-9]+th($|\s)')
+    output = [word.strip('th') if re.match(pattern, word) else word for word in input]
+    return output
+
+
+def get_ngram(tokens):
+    ngram = []
+    for i in range(1, len(tokens) + 1):
+        for s in range(len(tokens) - i + 1):
+            ngram.append((" ".join(tokens[s: s + i]), s, i + s))
+    return ngram
+
+def json2iob_kvret():
+
+    file_set = ['kvret_dev_public',
+                'kvret_train_public',
+                'kvret_test_public']
+    for file_name in file_set:
+        f_r = open('data/kvret/' + file_name + '.json', 'r', encoding='utf-8')
+        f_w = open('data/kvret/' + file_name + '.iob', 'w', encoding='utf-8')
+
+        json_data = json.load(f_r)
+
+
+        for dialogue in json_data:
+            session_intent = dialogue['scenario']['task']['intent']
+            driver = ''
+            for turn in dialogue['dialogue']:
+                speaker = turn['turn']
+                if speaker == 'driver':
+                    driver = turn['data']['utterance']
+                    continue
+                else:
+                    end = turn['data']['end_dialogue']
+                    intent = 'thanks' if end else session_intent
+                    slots = turn['data']['slots']
+
+                    driver_seg = [token.text for token in nlp.tokenizer(driver.strip())]
+                    driver_seg_lower = [token.lower() for token in driver_seg]
+                    driver_seg_lower_rs = [token.lower().strip('s') for token in driver_seg]
+                    driver_seg_lower_rs_th = remove_th(driver_seg_lower_rs)
+                    driver_len = len(driver_seg_lower)
+                    driver_iob = ['O' for i in driver_seg_lower]
+                    for slot, value in slots.items():
+                        flag_find = False
+                        flag_exist = False
+                        value_seg_lower = [token.text.lower().strip('s') for token in
+                                           nlp.tokenizer(value.strip().replace('.', ''))]
+                        value_seg_lower = remove_th(value_seg_lower)
+                        value_len = len(value_seg_lower)
+
+                        # match exactly
+                        for i in range(driver_len):
+                            if (i + value_len <= driver_len) and (driver_seg_lower_rs_th[i:i + value_len] == value_seg_lower):
+                                driver_iob[i] = 'B-' + slot
+                                for j in range(1, value_len):
+                                    driver_iob[i + j] = 'I-' + slot
+                                flag_find = True
+                                break
+                            if driver_seg_lower_rs_th[i] in value_seg_lower and driver_seg_lower[i] not in STOP_WORDS:
+                                flag_exist = True
+
+                        if flag_exist and not flag_find:
+                            # remove stop word in slot_value
+                            n_gram_candidate = get_ngram(driver_seg_lower_rs_th)
+                            n_gram_candidate = sorted(n_gram_candidate, key=lambda x: (fuzz.token_sort_ratio(x[0], value_seg_lower),-len(x[0].split())),
+                                                      reverse=True)
+
+                            top = n_gram_candidate[0]
+                            for i in range(top[1], top[2]):
+                                if i == top[1]:
+                                    driver_iob[i] = 'B-' + slot
+                                else:
+                                    driver_iob[i] = 'I-' + slot
+                            print('{}\t{}'.format(value,' '.join(driver_seg[top[1]:top[2]])))
+                    driver = ' '.join(driver_seg) + '|||' + ' '.join(driver_iob) + '|||' + intent
+                    f_w.write(driver + '\n')
+                    assistant = turn['data']['utterance']
+                    f_w.write(assistant + '\n')
+                    driver = ''
+            f_w.write('\n')
+        f_w.close()
+
+def json2iob_m2m():
+    file_set = ['sim-M/dev',
+                'sim-M/train',
+                'sim-M/test',
+                'sim-R/dev',
+                'sim-R/train',
+                'sim-R/test'
+                ]
+    for file_name in file_set:
+        f_r = open('data/m2m/' + file_name + '.json', 'r', encoding='utf-8')
+        f_w = open('data/m2m/' + file_name + '.iob', 'w', encoding='utf-8')
+
+        json_data = json.load(f_r)
+        for dialogue in json_data:
+            user_intent = ''
+            for i, turn in enumerate(dialogue['turns']):
+                if i == 0:
+                    user_intent = turn['user_intents'][0]
+                user_act = [act['type'] for act in turn['user_acts']]
+                user_tokens = turn['user_utterance']['tokens']
+                slots = turn['user_utterance']['slots']
+                user_iob = ['O' for token in user_tokens]
+                for slot in slots:
+                    start = slot['start']
+                    end = slot['exclusive_end']
+                    slot_name = slot['slot']
+                    user_iob[start] = 'B-'+slot_name
+                    for j in range(start+1,end):
+                        user_iob[j] = 'I-'+slot_name
+                if i != 0:
+                    sys = turn['system_utterance']['text']
+                    f_w.write(sys + '\n')
+                user = ' '.join(user_tokens)+'|||'+' '.join(user_iob)+'|||'+user_intent+'|||'+' '.join(user_act)
+                f_w.write(user + '\n')
+
+            f_w.write('\n')
+        f_w.close()
 
 def prepare_dataset(path,built_vocab=None,user_only=False,slm=False):
     data = open(path,"r",encoding="utf-8").readlines()
