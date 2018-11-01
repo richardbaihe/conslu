@@ -4,11 +4,7 @@
 
 ### [kvret](https://nlp.stanford.edu/blog/a-new-multi-turn-multi-domain-task-oriented-dialogue-dataset/)
 
-
-
 ### [M2M_Simulated Dialogue](https://github.com/google-research-datasets/simulated-dialogue)
-
-
 
 ### DSTC2
 
@@ -19,6 +15,12 @@ Time-decay https://github.com/MiuLab/Time-Decay-SLU
 没有slot
 
 
+
+## 2. requirement
+
+```
+pip install fuzzywuzzy
+```
 
 
 
