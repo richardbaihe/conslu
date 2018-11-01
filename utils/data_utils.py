@@ -1,15 +1,10 @@
 import torch
-# import torch.nn as nn
-# import torch.nn.functional as F
-# import numpy as np
-from copy import deepcopy
-import random, queue
-from tqdm import tqdm
-
-import json,re
 import spacy
 from spacy.lang.en.stop_words import STOP_WORDS
-from fuzzywuzzy import process, fuzz
+from fuzzywuzzy import fuzz
+import json, re, random
+from copy import deepcopy
+from tqdm import tqdm
 
 flatten = lambda l: [item for sublist in l for item in sublist]
 nlp = spacy.load('en_core_web_sm')
@@ -142,7 +137,8 @@ def json2iob_m2m():
             f_w.write('\n')
         f_w.close()
 
-def prepare_dataset(path,built_vocab=None,user_only=False,slm=False):
+def prepare_dataset(path,config,built_vocab=None,user_only=False):
+    slm = config.slm
     data = open(path,"r",encoding="utf-8").readlines()
     p_data = []
     c_data = []
@@ -207,7 +203,7 @@ def prepare_dataset(path,built_vocab=None,user_only=False,slm=False):
                 t[1][i] = prepare_sequence(candidate, word2index).view(1, -1)
             t.append(torch.LongTensor([1]+[0 for i in range(i-1)]).view(1, -1))
     if built_vocab is None:
-        return p_data,c_data, word2index, slot2index, intent2index
+        return p_data,c_data, (word2index, slot2index, intent2index)
     else:
         return p_data,c_data
 
