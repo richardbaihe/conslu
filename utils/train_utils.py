@@ -79,14 +79,13 @@ def train_multitask(model, train_data, dev_data, config):
             slot = slot.to(device)
             intent = intent.to(device)
 
-            model.zero_grad()
             slot_p, intent_p = model(h, c)
             loss_s = slot_loss_function(slot_p, slot.view(-1))
             loss_i = intent_loss_function(intent_p, intent.view(-1))
             loss_slu = loss_s + loss_i
             losses_slu.append(loss_slu.item())
-            losses_slu_decay = (1 - config.slm_weight) * loss_slu
-            losses_slu_decay.backward()
+            #losses_slu_decay = (1 - config.slm_weight) * loss_slu
+            #losses_slu_decay.backward()
 
             slm_h, slm_candi, slm_label = pad_to_batch_slm(batch_2, model.vocab)
             slm_h = [hh.to(device) for hh in slm_h]
@@ -96,10 +95,12 @@ def train_multitask(model, train_data, dev_data, config):
 
             loss_slm = slm_loss(slm_p, slm_label.view(-1))
             losses_slm.append(loss_slm.item())
-            loss_slm_decay = loss_slm * config.slm_weight
-            loss_slm_decay.backward()
 
-            losses_all.append(loss_slm_decay.item() + losses_slu_decay.item())
+            optimizer.zero_grad()
+            loss = loss_slm * config.slm_weight + (1 - config.slm_weight) * loss_slu
+            losses_all.append(loss.item())
+
+            loss.backward()
             optimizer.step()
 
             if i % 100 == 0:

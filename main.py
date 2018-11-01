@@ -15,12 +15,12 @@ if __name__ == "__main__":
     model = model_init(built_vocab, config)
 
     if config.mode == 'train':
-        if config.slm:
-            train_multitask(model,(train_data,train_slm_data),(dev_data,dev_slm_data),config)
-            evaluation(model, test_data)
-        else:
-            train(model, train_data, config)
-            evaluation(model, test_data)
-            save(model, config)
+        #if config.slm:
+        train_multitask(model,(train_data,train_slm_data),(dev_data,dev_slm_data),config)
+        evaluation(model, test_data)
+        # else:
+        #     train(model, train_data, config)
+        #     evaluation(model, test_data)
+        #     save(model, config)
     else:
         evaluation(model, test_data)
