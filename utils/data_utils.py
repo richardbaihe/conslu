@@ -30,9 +30,9 @@ def get_ngram(tokens):
 
 def json2iob_kvret():
 
-    file_set = ['kvret_dev_public',
-                'kvret_train_public',
-                'kvret_test_public']
+    file_set = ['train',
+                'dev',
+                'test']
     for file_name in file_set:
         f_r = open('data/kvret/' + file_name + '.json', 'r', encoding='utf-8')
         f_w = open('data/kvret/' + file_name + '.iob', 'w', encoding='utf-8')
@@ -49,53 +49,53 @@ def json2iob_kvret():
                     driver = turn['data']['utterance']
                     continue
                 else:
-                    end = turn['data']['end_dialogue']
-                    intent = 'thanks' if end else session_intent
-                    slots = turn['data']['slots']
+                    if '|||' not in driver and driver!='':
+                        end = turn['data']['end_dialogue']
+                        intent = 'thanks' if end else session_intent
+                        slots = turn['data']['slots']
 
-                    driver_seg = [token.text for token in nlp.tokenizer(driver.strip())]
-                    driver_seg_lower = [token.lower() for token in driver_seg]
-                    driver_seg_lower_rs = [token.lower().strip('s') for token in driver_seg]
-                    driver_seg_lower_rs_th = remove_th(driver_seg_lower_rs)
-                    driver_len = len(driver_seg_lower)
-                    driver_iob = ['O' for i in driver_seg_lower]
-                    for slot, value in slots.items():
-                        flag_find = False
-                        flag_exist = False
-                        value_seg_lower = [token.text.lower().strip('s') for token in
-                                           nlp.tokenizer(value.strip().replace('.', ''))]
-                        value_seg_lower = remove_th(value_seg_lower)
-                        value_len = len(value_seg_lower)
+                        driver_seg = [token.text for token in nlp.tokenizer(driver.strip())]
+                        driver_seg_lower = [token.lower() for token in driver_seg]
+                        driver_seg_lower_rs = [token.lower().strip('s') for token in driver_seg]
+                        driver_seg_lower_rs_th = remove_th(driver_seg_lower_rs)
+                        driver_len = len(driver_seg_lower)
+                        driver_iob = ['O' for i in driver_seg_lower]
+                        for slot, value in slots.items():
+                            flag_find = False
+                            flag_exist = False
+                            value_seg_lower = [token.text.lower().strip('s') for token in
+                                               nlp.tokenizer(value.strip().replace('.', ''))]
+                            value_seg_lower = remove_th(value_seg_lower)
+                            value_len = len(value_seg_lower)
 
-                        # match exactly
-                        for i in range(driver_len):
-                            if (i + value_len <= driver_len) and (driver_seg_lower_rs_th[i:i + value_len] == value_seg_lower):
-                                driver_iob[i] = 'B-' + slot
-                                for j in range(1, value_len):
-                                    driver_iob[i + j] = 'I-' + slot
-                                flag_find = True
-                                break
-                            if driver_seg_lower_rs_th[i] in value_seg_lower and driver_seg_lower[i] not in STOP_WORDS:
-                                flag_exist = True
-
-                        if flag_exist and not flag_find:
-                            # remove stop word in slot_value
-                            n_gram_candidate = get_ngram(driver_seg_lower_rs_th)
-                            n_gram_candidate = sorted(n_gram_candidate, key=lambda x: (fuzz.token_sort_ratio(x[0], value_seg_lower),-len(x[0].split())),
-                                                      reverse=True)
-
-                            top = n_gram_candidate[0]
-                            for i in range(top[1], top[2]):
-                                if i == top[1]:
+                            # match exactly
+                            for i in range(driver_len):
+                                if (i + value_len <= driver_len) and (driver_seg_lower_rs_th[i:i + value_len] == value_seg_lower):
                                     driver_iob[i] = 'B-' + slot
-                                else:
-                                    driver_iob[i] = 'I-' + slot
-                            print('{}\t{}'.format(value,' '.join(driver_seg[top[1]:top[2]])))
-                    driver = ' '.join(driver_seg) + '|||' + ' '.join(driver_iob) + '|||' + intent
-                    f_w.write(driver + '\n')
+                                    for j in range(1, value_len):
+                                        driver_iob[i + j] = 'I-' + slot
+                                    flag_find = True
+                                    break
+                                if driver_seg_lower_rs_th[i] in value_seg_lower and driver_seg_lower[i] not in STOP_WORDS:
+                                    flag_exist = True
+
+                            if flag_exist and not flag_find:
+                                # remove stop word in slot_value
+                                n_gram_candidate = get_ngram(driver_seg_lower_rs_th)
+                                n_gram_candidate = sorted(n_gram_candidate, key=lambda x: (fuzz.token_sort_ratio(x[0], value_seg_lower),-len(x[0].split())),
+                                                          reverse=True)
+
+                                top = n_gram_candidate[0]
+                                for i in range(top[1], top[2]):
+                                    if i == top[1]:
+                                        driver_iob[i] = 'B-' + slot
+                                    else:
+                                        driver_iob[i] = 'I-' + slot
+                                print('{}\t{}'.format(value,' '.join(driver_seg[top[1]:top[2]])))
+                        driver = ' '.join(driver_seg) + '|||' + ' '.join(driver_iob) + '|||' + intent
+                        f_w.write(driver + '\n')
                     assistant = turn['data']['utterance']
                     f_w.write(assistant + '\n')
-                    driver = ''
             f_w.write('\n')
         f_w.close()
 
@@ -328,3 +328,4 @@ def pad_to_history(history, x_to_ix): # this is for inference
         
     history = torch.cat(x_p)
     return [history]
+json2iob_kvret()
