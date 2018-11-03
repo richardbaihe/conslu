@@ -170,7 +170,7 @@ def prepare_dataset(path,config,built_vocab=None,user_only=False):
         vocab = list(set(flatten(currents)))
         slot_vocab = list(set(flatten(slots)))
         intent_vocab = list(set(intents))
-        
+
         word2index={"<pad>" : 0, "<unk>" : 1, "<null>" : 2, "<s>" : 3, "</s>" : 4}
         for vo in vocab:
             if word2index.get(vo)==None:
@@ -187,7 +187,7 @@ def prepare_dataset(path,config,built_vocab=None,user_only=False):
                 intent2index[vo] = len(intent2index)
     else:
         word2index, slot2index, intent2index = built_vocab
-        
+
     for t in tqdm(p_data):
         for i,history in enumerate(t[0]):
             t[0][i] = prepare_sequence(history, word2index).view(1, -1)
@@ -221,7 +221,7 @@ def data_loader(train_data,batch_size,shuffle=False):
         eindex = eindex + batch_size
         sindex = temp
         yield batch
-    
+
     if eindex >= len(train_data):
         batch = train_data[sindex:]
         yield batch
@@ -283,7 +283,7 @@ def pad_to_batch(batch, w_to_ix,s_to_ix): # for bAbI dataset
     max_len = max([h.size(1) for h in flatten(history)])
     max_current = max([c.size(1) for c in current])
     max_slot = max([s.size(1) for s in slot])
-    
+
     historys, currents, slots = [], [], []
     for i in range(len(batch)):
         history_p_t = []
@@ -312,11 +312,11 @@ def pad_to_batch(batch, w_to_ix,s_to_ix): # for bAbI dataset
     currents = torch.cat(currents)
     slots = torch.cat(slots)
     intents = torch.cat(intent)
-    
+
     return historys, currents, slots, intents
 
 def pad_to_history(history, x_to_ix): # this is for inference
-    
+
     max_x = max([len(s) for s in history])
     x_p = []
     for i in range(len(history)):
@@ -325,7 +325,6 @@ def pad_to_history(history, x_to_ix): # this is for inference
             x_p.append(torch.cat([h,torch.LongTensor([x_to_ix['<pad>']] * (max_x - h.size(1))).view(1, -1)], 1))
         else:
             x_p.append(h)
-        
+
     history = torch.cat(x_p)
     return [history]
-json2iob_kvret()
