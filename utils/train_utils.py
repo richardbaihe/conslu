@@ -81,10 +81,7 @@ def train_multitask(model, train_data, dev_data, config):
             intent = intent.to(device)
 
             slot_p, intent_p = model(h, c)
-            try:
-                loss_s = slot_loss_function(slot_p, slot.view(-1))
-            except:
-                print('fail')
+            loss_s = slot_loss_function(slot_p, slot.view(-1))
             loss_i = intent_loss_function(intent_p, intent.view(-1))
             loss_slu = loss_s + loss_i
             losses_slu.append(loss_slu.item())
@@ -108,7 +105,7 @@ def train_multitask(model, train_data, dev_data, config):
             loss.backward()
             optimizer.step()
 
-            if i % 20 == 0:
+            if i % 40 == 0:
                 # SLU
                 intent_acc = accuracy_score(intent.view(-1).tolist(), intent_p.max(1)[1].tolist())
                 slot_f1 = f1_score(slot.view(-1).tolist(), slot_p.max(1)[1].tolist(), average='micro')
@@ -135,6 +132,7 @@ def train_multitask(model, train_data, dev_data, config):
                 losses_all = []
                 losses_slu = []
                 losses_slm = []
+
         metric, loss = evaluation_multi(model, dev_data_1, dev_data_2, config)
         if metric[1] > config.best_score:
             config.best_score = metric[1]
@@ -294,7 +292,7 @@ def get_config():
     parser.add_argument('--mode', type=str, default='train')
     parser.add_argument('--epochs', type=int, default=5,
                         help='num_epochs')
-    parser.add_argument('--pre_dataset', type=bool, default=False)
+    parser.add_argument('--pre_dataset', action='store_true')
     parser.add_argument('--batch_size', type=int, default=64,
                         help='batch size')
     parser.add_argument('--lr', type=float, default=0.001,
@@ -313,7 +311,7 @@ def get_config():
                         help='slm weight')
     parser.add_argument('--model_name',type=str, default='sden_slm0',
                         help='name of modelfile')
-    parser.add_argument('--new_model',type=bool, default=False,
+    parser.add_argument('--new_model',action='store_true',
                          help='whether delete previous model or not')
     config = parser.parse_args()
     config.save_path = os.path.join(config.save_path , config.task , config.model_name)
