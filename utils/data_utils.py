@@ -91,7 +91,7 @@ def json2iob_kvret():
                                         driver_iob[i] = 'B-' + slot
                                     else:
                                         driver_iob[i] = 'I-' + slot
-                                print('{}\t{}'.format(value,' '.join(driver_seg[top[1]:top[2]])))
+                                #print('{}\t{}'.format(value,' '.join(driver_seg[top[1]:top[2]])))
                         driver = ' '.join(driver_seg) + '|||' + ' '.join(driver_iob) + '|||' + intent
                         f_w.write(driver + '\n')
                     assistant = turn['data']['utterance']

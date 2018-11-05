@@ -6,6 +6,11 @@ warnings.filterwarnings("ignore")
 
 if __name__ == "__main__":
     config = get_config()
+    if config.pre_dataset:
+        print('convert json to iob for kvret')
+        json2iob_kvret()
+        print('convert json to iob for m2m')
+        json2iob_m2m()
 
     train_path = os.path.join('data',config.task,'train.iob')
     dev_path = os.path.join('data',config.task,'dev.iob')

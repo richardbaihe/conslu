@@ -1,8 +1,9 @@
 export CUDA_VISIBLE_DEVICES=$1
 python -u -m main \
---epochs=10 \
+--pre_dataset=False \
+--epochs=20 \
 --new_model=True \
---model_name=s2s \
---model=s2s \
---task=kvret
-
+--model_name=sden \
+--model=sden \
+--task=kvret \
+--slm_weight=0
