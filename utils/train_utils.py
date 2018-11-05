@@ -19,37 +19,38 @@ model_dic = {'sden': SDEN,
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-def train(model, train_data, config):
-    slot_loss_function = nn.CrossEntropyLoss(ignore_index=0)
-    intent_loss_function = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=config.lr)
-    scheduler = optim.lr_scheduler.MultiStepLR(gamma=0.1, milestones=[config.epochs // 4, config.epochs // 2],
-                                               optimizer=optimizer)
-
-    model.train()
-    for epoch in range(config.epochs):
-        losses = []
-        scheduler.step()
-        for i, batch in enumerate(data_loader(train_data, config.batch_size, True)):
-            h, c, slot, intent = pad_to_batch(batch, model.vocab, model.slot_vocab)
-            h = [hh.to(device) for hh in h]
-            c = c.to(device)
-            slot = slot.to(device)
-            intent = intent.to(device)
-            model.zero_grad()
-            slot_p, intent_p = model(h, c)
-
-            loss_s = slot_loss_function(slot_p, slot.view(-1))
-            loss_i = intent_loss_function(intent_p, intent.view(-1))
-            loss = loss_s + loss_i
-            losses.append(loss.item())
-            loss.backward()
-            optimizer.step()
-
-            if i % 100 == 0:
-                print("[%d/%d] [%d/%d] mean_loss: %.3f" % \
-                      (epoch, config.epochs, i, len(train_data) // config.batch_size, np.mean(losses)))
-                losses = []
+# def train(model, train_data, config):
+#     slot_loss_function = nn.CrossEntropyLoss(ignore_index=0)
+#     intent_loss_function = nn.CrossEntropyLoss()
+#     optimizer = optim.Adam(model.parameters(), lr=config.lr)
+#     scheduler = optim.lr_scheduler.MultiStepLR(gamma=0.1, milestones=[config.epochs // 4, config.epochs // 2],
+#                                                optimizer=optimizer)
+#
+#     model.train()
+#     for epoch in range(config.epochs):
+#         losses = []
+#         scheduler.step()
+#         for i, batch in enumerate(data_loader(train_data, config.batch_size, True)):
+#             h, c, slot, intent = pad_to_batch(batch, model.vocab, model.slot_vocab)
+#             h = [hh.to(device) for hh in h]
+#             c = c.to(device)
+#             slot = slot.to(device)
+#             intent = intent.to(device)
+#             model.zero_grad()
+#             slot_p, intent_p = model(h, c)
+#
+#             loss_s = slot_loss_function(slot_p, slot.view(-1))
+#             loss_i = intent_loss_function(intent_p, intent.view(-1))
+#             loss = loss_s + loss_i
+#             losses.append(loss.item())
+#             loss.backward()
+#             optimizer.step()
+#
+#             if i % 100 == 0:
+#                 print("[%d/%d] [%d/%d] mean_loss: %.3f" % \
+#                       (epoch, config.epochs, i, len(train_data) // config.batch_size, np.mean(losses)))
+#                 losses = []
+#
 
 
 def train_multitask(model, train_data, dev_data, config):
@@ -80,21 +81,25 @@ def train_multitask(model, train_data, dev_data, config):
             intent = intent.to(device)
 
             slot_p, intent_p = model(h, c)
-            loss_s = slot_loss_function(slot_p, slot.view(-1))
+            try:
+                loss_s = slot_loss_function(slot_p, slot.view(-1))
+            except:
+                print('fail')
             loss_i = intent_loss_function(intent_p, intent.view(-1))
             loss_slu = loss_s + loss_i
             losses_slu.append(loss_slu.item())
-            #losses_slu_decay = (1 - config.slm_weight) * loss_slu
-            #losses_slu_decay.backward()
+            if config.slm_weight>0:
+                slm_h, slm_candi, slm_label = pad_to_batch_slm(batch_2, model.vocab)
+                slm_h = [hh.to(device) for hh in slm_h]
+                slm_candi = [hh.to(device) for hh in slm_candi]
+                slm_label = slm_label.to(device)
+                slm_p = model(slm_h, slm_candi, slm=True).view(-1, 2)
 
-            slm_h, slm_candi, slm_label = pad_to_batch_slm(batch_2, model.vocab)
-            slm_h = [hh.to(device) for hh in slm_h]
-            slm_candi = [hh.to(device) for hh in slm_candi]
-            slm_label = slm_label.to(device)
-            slm_p = model(slm_h, slm_candi, slm=True).view(-1, 2)
-
-            loss_slm = slm_loss(slm_p, slm_label.view(-1))
-            losses_slm.append(loss_slm.item())
+                loss_slm = slm_loss(slm_p, slm_label.view(-1))
+                losses_slm.append(loss_slm.item())
+            else:
+                loss_slm = 0
+                losses_slm.append(loss_slm)
 
             optimizer.zero_grad()
             loss = loss_slm * config.slm_weight + (1 - config.slm_weight) * loss_slu
@@ -103,34 +108,51 @@ def train_multitask(model, train_data, dev_data, config):
             loss.backward()
             optimizer.step()
 
-            if i % 100 == 0:
+            if i % 20 == 0:
                 # SLU
                 intent_acc = accuracy_score(intent.view(-1).tolist(), intent_p.max(1)[1].tolist())
                 slot_f1 = f1_score(slot.view(-1).tolist(), slot_p.max(1)[1].tolist(), average='micro')
                 # SLM
-                label = slm_label.view(-1).tolist()
-                pred = slm_p.max(1)[1].tolist()
-                slm_acc = accuracy_score(label, pred)
-                slm_recall = recall_score(label, pred)
-
+                if config.slm_weight > 0:
+                    label = slm_label.view(-1).tolist()
+                    pred = slm_p.max(1)[1].tolist()
+                    slm_acc = accuracy_score(label, pred)
+                    slm_recall = recall_score(label, pred)
+                else:
+                    slm_acc = 0
+                    slm_recall = 0
+                metrics_dict = {'loss_all': np.round(np.mean(losses_all),2),
+                                'loss_slm': np.round(np.mean(losses_slm),2),
+                                'losses_slu': np.round(np.mean(losses_slu),2),
+                                'intent_acc': np.round(intent_acc,2),
+                                'slot_f1': np.round(slot_f1,2),
+                                'slm_acc': np.round(slm_acc,2),
+                                'slm_recall': np.round(slm_recall,2)
+                                }
                 log_printer(log, "train", epoch="{}/{}".format(epoch, config.epochs),
                             iters="{}/{}".format(i, len(train_data_1) // config.batch_size),
-                            metrics=[intent_acc, slot_f1, slm_acc, slm_recall],
-                            loss=[np.mean(losses_all), np.mean(losses_slm), np.mean(losses_slu)])
+                            metrics=metrics_dict)
                 losses_all = []
                 losses_slu = []
                 losses_slm = []
-        metric, loss = evaluation_multi(model, dev_data_1, dev_data_2)
+        metric, loss = evaluation_multi(model, dev_data_1, dev_data_2, config)
         if metric[1] > config.best_score:
             config.best_score = metric[1]
             save(model, config)
+        metrics_dict = {'loss_all': np.round(np.mean(losses_all),2),
+                        'loss_slm':  np.round(np.mean(losses_slm),2),
+                        'losses_slu':  np.round(np.mean(losses_slu),2),
+                        'intent_acc':  np.round(metric[0],2),
+                        'slot_f1':  np.round(metric[1],2),
+                        'slm_acc':  np.round(metric[2],2),
+                        'slm_recall':  np.round(metric[3],2)
+                        }
         log_printer(log, 'eval', epoch="{}/{}".format(epoch, config.epochs),
                     iters="{}/{}".format(i, len(train_data_1) // config.batch_size),
-                    metrics=metric,
-                    loss=loss)
+                    metrics=metrics_dict)
 
 
-def evaluation_multi(model, dev_data_1, dev_data_2):
+def evaluation_multi(model, dev_data_1, dev_data_2,config):
     model.eval()
     slm_loss = nn.CrossEntropyLoss()
     slot_loss_function = nn.CrossEntropyLoss(ignore_index=0)
@@ -153,25 +175,27 @@ def evaluation_multi(model, dev_data_1, dev_data_2):
             label = intent.view(-1).tolist()
             pred = intent_p.max(1)[1].tolist()
             intent_acc.append(accuracy_score(label, pred))
-            # hits = torch.eq(intent_p.max(1)[1], intent.view(-1)).sum().item()
-            # intent_acc.append(hits / 32)
             slot_f1 = f1_score(slot.view(-1).tolist(), slot_p.max(1)[1].tolist(), average='micro')
             loss_s = slot_loss_function(slot_p, slot.view(-1))
             loss_i = intent_loss_function(intent_p, intent.view(-1))
             losses_slu.append((loss_s.item() + loss_i.item()))
-        for i, batch in enumerate(data_loader(dev_data_2, 32, True)):
-            slm_h, slm_candi, slm_label = pad_to_batch_slm(batch, model.vocab)
-            slm_h = [hh.to(device) for hh in slm_h]
-            slm_candi = [hh.to(device) for hh in slm_candi]
-            slm_label = slm_label.to(device)
-            slm_p = model(slm_h, slm_candi, slm=True).view(-1, 2)
-            label = slm_label.view(-1).tolist()
-            pred = slm_p.max(1)[1].tolist()
-            slm_acc.append(accuracy_score(label, pred))
-            slm_recall.append(recall_score(label, pred))
-            loss_slm = slm_loss(slm_p, slm_label.view(-1))
-            losses_slm.append(loss_slm.item())
-
+        if config.slm_weight > 0:
+            for i, batch in enumerate(data_loader(dev_data_2, 32, True)):
+                slm_h, slm_candi, slm_label = pad_to_batch_slm(batch, model.vocab)
+                slm_h = [hh.to(device) for hh in slm_h]
+                slm_candi = [hh.to(device) for hh in slm_candi]
+                slm_label = slm_label.to(device)
+                slm_p = model(slm_h, slm_candi, slm=True).view(-1, 2)
+                label = slm_label.view(-1).tolist()
+                pred = slm_p.max(1)[1].tolist()
+                slm_acc.append(accuracy_score(label, pred))
+                slm_recall.append(recall_score(label, pred))
+                loss_slm = slm_loss(slm_p, slm_label.view(-1))
+                losses_slm.append(loss_slm.item())
+        else:
+            losses_slm.append(0)
+            slm_acc = 0
+            slm_recall = 0
     losses_slm = np.mean(losses_slm)
     losses_slu = np.mean(losses_slu)
     losses_all = losses_slu + losses_slm
@@ -227,11 +251,12 @@ def model_init(built_vocab, config):
     model.intent_vocab = intent2index
     config.best_score = 0
     if os.path.exists(config.save_path + '/model.pkl'):
+        print('[  found previous model from {}  ]'.format(config.save_path))
         if config.new_model:
-            print('deleting previous model')
+            print('deleting previous model...')
             os.system('rm -rf ' + config.save_path)
         else:
-            print('loading previous model')
+            print('loading previous model...')
             checkpoint = torch.load(config.save_path + '/model.pkl', map_location=lambda storage, loc: storage)
             print(checkpoint['config'])
             model.load_state_dict(checkpoint['model'])
@@ -252,37 +277,15 @@ def save(model,config):
     print("Model saved!")
 
 
-def log_printer(log, name, metrics, loss, epoch=None, iters=None):
+def log_printer(log, name, epoch, iters, metrics):
+    metrics_dict = metrics
+    step = int(iters.split('/')[0]) + int(iters.split('/')[1]) * (int(epoch.split('/')[0]) - 1)
+    print("[ {} epoch:{} iter:{} ]".format(name, epoch, iters) + str(metrics_dict))
 
-    if name == 'train':
-        print("=========={}\tepoch: {}\titer: {}==========\nintent_acc: {:.3f}\tslot_f1: {:.3f}\tslm_acc: {:.3f}\tslm_r: {:.3f}\tloss_all: {:.3f}\tloss_slm: {:.3f}\tloss_slu: {:.3f}".format(
-            name, epoch, iters, metrics[0], metrics[1], metrics[2], metrics[3], loss[0], loss[1], loss[2]
-        ))
-        step = int(iters.split('/')[0]) + int(iters.split('/')[1]) * (int(epoch.split('/')[0])-1)
-        log.scalar_summary(tag="loss_all", value=loss[0], step=step)
-        log.scalar_summary(tag="loss_slm", value=loss[1], step=step)
-        log.scalar_summary(tag="loss_slu", value=loss[2], step=step)
-        log.scalar_summary(tag="SLU_ACC", value=metrics[0], step=step)
-        log.scalar_summary(tag="SLU_F1", value=metrics[1], step=step)
-        log.scalar_summary(tag="SLM_ACC", value=metrics[2], step=step)
-        log.scalar_summary(tag="SLM_Recall", value=metrics[3], step=step)
-
-    else:
-        if loss == None:
-            print("===================={}====================\nintent_acc: {:.3f}\tslot_f1: {:.3f}\tslm_acc: {:.3f}\tslm_r: {:.3f}".format(
-                name, metrics[0], metrics[1], metrics[2], metrics[3]))
-        else:
-            print("===================={}====================\nintent_acc: {:.3f}\tslot_f1: {:.3f}\tslm_acc: {:.3f}\tslm_r: {:.3f}\tloss_all: {:.3f}\tloss_slm: {:.3f}\tloss_slu: {:.3f}".format(
-                name, metrics[0], metrics[1], metrics[2], metrics[3], loss[0], loss[1], loss[2]))
-        if iters != None and epoch != None and loss != None:
-            step = int(iters.split('/')[0]) + int(iters.split('/')[1]) * (int(epoch.split('/')[0])-1)
-            log.scalar_summary(tag="valid_loss_all", value=loss[0], step=step)
-            log.scalar_summary(tag="valid_loss_slm", value=loss[1], step=step)
-            log.scalar_summary(tag="valid_loss_slu", value=loss[2], step=step)
-            log.scalar_summary(tag="vaild_SLU_ACC", value=metrics[0], step=step)
-            log.scalar_summary(tag="vaild_SLU_F1", value=metrics[1], step=step)
-            log.scalar_summary(tag="vaild_SLM_ACC", value=metrics[2], step=step)
-            log.scalar_summary(tag="vaild_SLM_Recall", value=metrics[3], step=step)
+    for k,v in metrics_dict.items():
+        if name == 'train':
+            k = 'valid_'+k
+        log.scalar_summary(tag=k, value=v, step=step)
 
 
 def get_config():
@@ -305,8 +308,6 @@ def get_config():
                         help='save_path')
     parser.add_argument('--model', type=str, default='sden',
                         help='s2s, contex_s2s, sden' )
-    parser.add_argument('--slm',type=bool, default=False,
-                        help='whether sentence level language model training or not')
     parser.add_argument('--slm_weight',type=float, default=0,
                         help='slm weight')
     parser.add_argument('--model_name',type=str, default='sden_slm0',
@@ -315,4 +316,8 @@ def get_config():
                          help='whether delete previous model or not')
     config = parser.parse_args()
     config.save_path = os.path.join(config.save_path , config.task , config.model_name)
+
+    options = vars(config)
+    for k,v in options.items():
+        print('[  {}:  {}  ]'.format(k,v))
     return config

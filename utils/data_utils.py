@@ -54,7 +54,7 @@ def json2iob_kvret():
                         intent = 'thanks' if end else session_intent
                         slots = turn['data']['slots']
 
-                        driver_seg = [token.text for token in nlp.tokenizer(driver.strip())]
+                        driver_seg = [token.text for token in nlp.tokenizer(driver) if not token.is_space]
                         driver_seg_lower = [token.lower() for token in driver_seg]
                         driver_seg_lower_rs = [token.lower().strip('s') for token in driver_seg]
                         driver_seg_lower_rs_th = remove_th(driver_seg_lower_rs)
@@ -138,7 +138,7 @@ def json2iob_m2m():
         f_w.close()
 
 def prepare_dataset(path,config,built_vocab=None,user_only=False):
-    slm = config.slm
+    slm = config.slm_weight>0
     data = open(path,"r",encoding="utf-8").readlines()
     p_data = []
     c_data = []
@@ -166,6 +166,7 @@ def prepare_dataset(path,config,built_vocab=None,user_only=False):
             p_data.append([temp,user,tag,intent])
             history.append(user)
     if built_vocab is None:
+        print('building dictionary first...')
         historys, currents, slots, intents = list(zip(*p_data))
         vocab = list(set(flatten(currents)))
         slot_vocab = list(set(flatten(slots)))
@@ -202,6 +203,8 @@ def prepare_dataset(path,config,built_vocab=None,user_only=False):
             for i, candidate in enumerate(t[1]):
                 t[1][i] = prepare_sequence(candidate, word2index).view(1, -1)
             t.append(torch.LongTensor([1]+[0 for i in range(i-1)]).view(1, -1))
+    else:
+        c_data = p_data
     if built_vocab is None:
         return p_data,c_data, (word2index, slot2index, intent2index)
     else:
