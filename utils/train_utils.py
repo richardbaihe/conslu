@@ -19,40 +19,6 @@ model_dic = {'sden': SDEN,
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-# def train(model, train_data, config):
-#     slot_loss_function = nn.CrossEntropyLoss(ignore_index=0)
-#     intent_loss_function = nn.CrossEntropyLoss()
-#     optimizer = optim.Adam(model.parameters(), lr=config.lr)
-#     scheduler = optim.lr_scheduler.MultiStepLR(gamma=0.1, milestones=[config.epochs // 4, config.epochs // 2],
-#                                                optimizer=optimizer)
-#
-#     model.train()
-#     for epoch in range(config.epochs):
-#         losses = []
-#         scheduler.step()
-#         for i, batch in enumerate(data_loader(train_data, config.batch_size, True)):
-#             h, c, slot, intent = pad_to_batch(batch, model.vocab, model.slot_vocab)
-#             h = [hh.to(device) for hh in h]
-#             c = c.to(device)
-#             slot = slot.to(device)
-#             intent = intent.to(device)
-#             model.zero_grad()
-#             slot_p, intent_p = model(h, c)
-#
-#             loss_s = slot_loss_function(slot_p, slot.view(-1))
-#             loss_i = intent_loss_function(intent_p, intent.view(-1))
-#             loss = loss_s + loss_i
-#             losses.append(loss.item())
-#             loss.backward()
-#             optimizer.step()
-#
-#             if i % 100 == 0:
-#                 print("[%d/%d] [%d/%d] mean_loss: %.3f" % \
-#                       (epoch, config.epochs, i, len(train_data) // config.batch_size, np.mean(losses)))
-#                 losses = []
-#
-
-
 def train_multitask(model, train_data, dev_data, config):
     log = logger.Logger(config.save_path)
 
@@ -135,9 +101,9 @@ def train_multitask(model, train_data, dev_data, config):
 
         metric, loss = evaluation_multi(model, dev_data_1, dev_data_2, config)
 
-        metrics_dict = {'loss_all': np.round(np.mean(losses_all),2),
-                        'loss_slm':  np.round(np.mean(losses_slm),2),
-                        'losses_slu':  np.round(np.mean(losses_slu),2),
+        metrics_dict = {'loss_all': np.round(np.mean(loss[0]),2),
+                        'loss_slm':  np.round(np.mean(loss[1]),2),
+                        'losses_slu':  np.round(np.mean(loss[2]),2),
                         'intent_acc':  np.round(metric[0],2),
                         'slot_f1':  np.round(metric[1],2),
                         'slm_acc':  np.round(metric[2],2),
