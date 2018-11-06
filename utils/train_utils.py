@@ -151,7 +151,7 @@ def train_multitask(model, train_data, dev_data, config):
             slu_f1_scores = []
             config.best_score = metric[1]
             save(model, config)
-        slu_f1_scores.append(metrics[1])
+        slu_f1_scores.append(metric[1])
         if len(slu_f1_scores) > config.early_stop:
             print('Early stop after f1 score did not increase after {} epochs'.format(config.early_stop))
             return
