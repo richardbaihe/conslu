@@ -65,7 +65,7 @@ def train_multitask(model, train_data, dev_data, config):
     optimizer = optim.Adam(model.parameters(), lr=config.lr)
     scheduler = optim.lr_scheduler.MultiStepLR(gamma=0.1, milestones=[config.epochs // 4, config.epochs // 2],
                                                optimizer=optimizer)
-
+    slu_f1_scores = [] #early stop
     for epoch in range(config.epochs):
         model.train()
         losses_slu = []
@@ -134,9 +134,7 @@ def train_multitask(model, train_data, dev_data, config):
                 losses_slm = []
 
         metric, loss = evaluation_multi(model, dev_data_1, dev_data_2, config)
-        if metric[1] > config.best_score:
-            config.best_score = metric[1]
-            save(model, config)
+
         metrics_dict = {'loss_all': np.round(np.mean(losses_all),2),
                         'loss_slm':  np.round(np.mean(losses_slm),2),
                         'losses_slu':  np.round(np.mean(losses_slu),2),
@@ -149,7 +147,14 @@ def train_multitask(model, train_data, dev_data, config):
                     iters="{}/{}".format(i, len(train_data_1) // config.batch_size),
                     metrics=metrics_dict)
 
-
+        if metric[1] > config.best_score:
+            slu_f1_scores = []
+            config.best_score = metric[1]
+            save(model, config)
+        slu_f1_scores.append(metrics[1])
+        if len(slu_f1_scores) > config.early_stop:
+            print('Early stop after f1 score did not increase after {} epochs'.format(config.early_stop))
+            return
 def evaluation_multi(model, dev_data_1, dev_data_2,config):
     model.eval()
     slm_loss = nn.CrossEntropyLoss()
@@ -242,25 +247,31 @@ def model_init(built_vocab, config):
     word2index, slot2index, intent2index = built_vocab
     model = model_dic[config.model](len(word2index),config.embed_size,config.hidden_size,\
                  len(slot2index),len(intent2index),word2index['<pad>'])
-
     model.to(device)
+
     model.vocab = word2index
     model.slot_vocab = slot2index
     model.intent_vocab = intent2index
     config.best_score = 0
-    if os.path.exists(config.save_path + '/model.pkl'):
-        print('[  found previous model from {}  ]'.format(config.save_path))
-        if config.new_model:
-            print('deleting previous model...')
-            os.system('rm -rf ' + config.save_path)
-        else:
-            print('loading previous model...')
-            checkpoint = torch.load(config.save_path + '/model.pkl', map_location=lambda storage, loc: storage)
-            print(checkpoint['config'])
-            model.load_state_dict(checkpoint['model'])
-            config.best_score = checkpoint['best_score']
+
     return model
 
+def model_load(config):
+    print('loading previous model...')
+    checkpoint = torch.load(config.save_path + '/model.pkl', map_location=lambda storage, loc: storage)
+    print(checkpoint['config'])
+
+    word2index, slot2index, intent2index = checkpoint['vocab'], checkpoint['slot_vocab'], checkpoint['intent_vocab']
+    model = model_dic[config.model](len(word2index), config.embed_size, config.hidden_size, \
+                                    len(slot2index), len(intent2index), word2index['<pad>'])
+    model.to(device)
+    model.vocab = word2index
+    model.slot_vocab = slot2index
+    model.intent_vocab = intent2index
+
+    model.load_state_dict(checkpoint['model'])
+    config.best_score = checkpoint['best_score']
+    return model
 
 def save(model,config):
     checkpoint = {
@@ -313,6 +324,8 @@ def get_config():
                         help='name of modelfile')
     parser.add_argument('--new_model',action='store_true',
                          help='whether delete previous model or not')
+    parser.add_argument('--early_stop', type=int, default=5,
+                        help='whether delete previous model or not')
     config = parser.parse_args()
     config.save_path = os.path.join(config.save_path , config.task , config.model_name)
 
