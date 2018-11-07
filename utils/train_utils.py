@@ -155,7 +155,7 @@ def evaluation_multi(model, dev_data_1, dev_data_2,config):
         if config.slm_weight > 0:
             slm_label = []
             slm_pred = []
-            for i, batch in enumerate(data_loader(dev_data_2, 32, True)):
+            for i, batch in enumerate(data_loader(dev_data_2, 32, False)):
                 slm_h, slm_candi, slm_label = pad_to_batch_slm(batch, model.vocab)
                 slm_h = [hh.to(device) for hh in slm_h]
                 slm_candi = [hh.to(device) for hh in slm_candi]

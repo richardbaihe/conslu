@@ -35,16 +35,16 @@ if __name__ == "__main__":
         print('begin testing...')
         model = model_load(config)
         metric, loss = evaluation_multi(model,dev_data,dev_slm_data,config)
-        metrics_dict = {'loss_all': np.round(np.mean(loss[0]),2),
-                        'loss_slm':  np.round(np.mean(loss[1]),2),
-                        'losses_slu':  np.round(np.mean(loss[2]),2),
-                        'intent_acc':  np.round(metric[0],2),
-                        'slot_f1':  np.round(metric[1],2),
-                        'slm_acc':  np.round(metric[2],2),
-                        'slm_recall':  np.round(metric[3],2)
-                        }
-        print(str(metrics_dict))
-        evaluation(model, test_data)
+        # metrics_dict = {'loss_all': np.round(np.mean(loss[0]),2),
+        #                 'loss_slm':  np.round(np.mean(loss[1]),2),
+        #                 'losses_slu':  np.round(np.mean(loss[2]),2),
+        #                 'intent_acc':  np.round(metric[0],2),
+        #                 'slot_f1':  np.round(metric[1],2),
+        #                 'slm_acc':  np.round(metric[2],2),
+        #                 'slm_recall':  np.round(metric[3],2)
+        #                 }
+        # print(str(metrics_dict))
+        # evaluation(model, test_data)
     else:
         metric, loss = evaluation_multi(model,dev_data,dev_slm_data,config)
         metrics_dict = {'loss_all': np.round(np.mean(loss[0]),2),
