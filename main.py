@@ -18,7 +18,7 @@ if __name__ == "__main__":
 
     if os.path.exists(config.save_path + '/model.pkl'):
         print('\n[  found previous model from {}  ]'.format(config.save_path))
-        if config.new_model:
+        if config.new_model and config.mode == 'train':
             print('deleting previous model...')
             os.system('rm -rf ' + config.save_path)
             print('initializing new model...')
@@ -34,6 +34,16 @@ if __name__ == "__main__":
         train_multitask(model,(train_data,train_slm_data),(dev_data,dev_slm_data),config)
         print('begin testing...')
         model = model_load(config)
+        metric, loss = evaluation_multi(model,dev_data,dev_slm_data,config)
+        metrics_dict = {'loss_all': np.round(np.mean(loss[0]),2),
+                        'loss_slm':  np.round(np.mean(loss[1]),2),
+                        'losses_slu':  np.round(np.mean(loss[2]),2),
+                        'intent_acc':  np.round(metric[0],2),
+                        'slot_f1':  np.round(metric[1],2),
+                        'slm_acc':  np.round(metric[2],2),
+                        'slm_recall':  np.round(metric[3],2)
+                        }
+        print(str(metrics_dict))
         evaluation(model, test_data)
     else:
         metric, loss = evaluation_multi(model,dev_data,dev_slm_data,config)

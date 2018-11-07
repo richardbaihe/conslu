@@ -126,14 +126,16 @@ def evaluation_multi(model, dev_data_1, dev_data_2,config):
     slm_loss = nn.CrossEntropyLoss()
     slot_loss_function = nn.CrossEntropyLoss(ignore_index=0)
     intent_loss_function = nn.CrossEntropyLoss()
-    intent_acc = []
-    slot_f1 = []
-    slm_acc = []
-    slm_recall = []
+
+    intent_label = []
+    intent_pred = []
+    slot_label = []
+    slot_pred = []
+
     losses_slu = []
     losses_slm = []
     with torch.no_grad():
-        for i, batch in enumerate(data_loader(dev_data_1, 32, True)):
+        for i, batch in enumerate(data_loader(dev_data_1, 32, False)):
             h, c, slot, intent = pad_to_batch(batch, model.vocab, model.slot_vocab)
             h = [hh.to(device) for hh in h]
             c = c.to(device)
@@ -141,35 +143,41 @@ def evaluation_multi(model, dev_data_1, dev_data_2,config):
             intent = intent.to(device)
             slot_p, intent_p = model(h, c)
 
-            label = intent.view(-1).tolist()
-            pred = intent_p.max(1)[1].tolist()
-            intent_acc.append(accuracy_score(label, pred))
-            slot_f1 = f1_score(slot.view(-1).tolist(), slot_p.max(1)[1].tolist(), average='micro')
+            intent_label.extend(intent.view(-1).tolist())
+            intent_pred.extend(intent_p.max(1)[1].tolist())
+
+            slot_label.extend(slot.view(-1).tolist())
+            slot_pred.extend(slot_p.max(1)[1].tolist())
+
             loss_s = slot_loss_function(slot_p, slot.view(-1))
             loss_i = intent_loss_function(intent_p, intent.view(-1))
             losses_slu.append((loss_s.item() + loss_i.item()))
         if config.slm_weight > 0:
+            slm_label = []
+            slm_pred = []
             for i, batch in enumerate(data_loader(dev_data_2, 32, True)):
                 slm_h, slm_candi, slm_label = pad_to_batch_slm(batch, model.vocab)
                 slm_h = [hh.to(device) for hh in slm_h]
                 slm_candi = [hh.to(device) for hh in slm_candi]
                 slm_label = slm_label.to(device)
                 slm_p = model(slm_h, slm_candi, slm=True).view(-1, 2)
-                label = slm_label.view(-1).tolist()
-                pred = slm_p.max(1)[1].tolist()
-                slm_acc.append(accuracy_score(label, pred))
-                slm_recall.append(recall_score(label, pred))
+                slm_label.extend(slm_label.view(-1).tolist())
+                slm_pred.extend(slm_p.max(1)[1].tolist())
                 loss_slm = slm_loss(slm_p, slm_label.view(-1))
                 losses_slm.append(loss_slm.item())
+            slm_acc = accuracy_score(slm_label,slm_pred)
+            slm_recall = recall_score(slm_label, slm_pred)
         else:
             losses_slm.append(0)
             slm_acc = 0
             slm_recall = 0
+
+    intent_acc = accuracy_score(intent_label, intent_pred)
+    slot_f1 = f1_score(slot_label,slot_pred,average='micro')
     losses_slm = np.mean(losses_slm)
     losses_slu = np.mean(losses_slu)
     losses_all = losses_slu + losses_slm
-    return [np.mean(intent_acc), np.mean(slot_f1), np.mean(slm_acc), np.mean(slm_recall)], [losses_all, losses_slm,
-                                                                                            losses_slu]
+    return [intent_acc, slot_f1, slm_acc, slm_recall], [losses_all, losses_slm,losses_slu]
 
 
 def evaluation(model, dev_data):
@@ -179,7 +187,7 @@ def evaluation(model, dev_data):
     labels = []
     hits = 0
     with torch.no_grad():
-        for i, batch in enumerate(data_loader(dev_data, 32, True)):
+        for i, batch in enumerate(data_loader(dev_data, 32, False)):
             h, c, slot, intent = pad_to_batch(batch, model.vocab, model.slot_vocab)
             h = [hh.to(device) for hh in h]
             c = c.to(device)
