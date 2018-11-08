@@ -34,5 +34,7 @@ if __name__ == "__main__":
         train_multitask(model,(train_data,train_slm_data),(dev_data,dev_slm_data),config)
         print('begin testing...')
         evaluation(model, test_data)
+        model = model_load(config)
+        evaluation(model, test_data)
     else:
         evaluation(model, test_data)

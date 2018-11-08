@@ -87,10 +87,10 @@ def train_multitask(model, train_data, dev_data, config):
                 metrics_dict = {'loss_all': np.round(np.mean(losses_all),2),
                                 'loss_slm': np.round(np.mean(losses_slm),2),
                                 'losses_slu': np.round(np.mean(losses_slu),2),
-                                'intent_acc': np.round(intent_acc,2),
-                                'slot_f1': np.round(slot_f1,2),
-                                'slm_acc': np.round(slm_acc,2),
-                                'slm_recall': np.round(slm_recall,2)
+                                # 'intent_acc': np.round(intent_acc,2),
+                                # 'slot_f1': np.round(slot_f1,2),
+                                # 'slm_acc': np.round(slm_acc,2),
+                                # 'slm_recall': np.round(slm_recall,2)
                                 }
                 log_printer(log, "train", epoch="{}/{}".format(epoch, config.epochs),
                             iters="{}/{}".format(i, len(train_data_1) // config.batch_size),
@@ -244,7 +244,7 @@ def model_load(config):
     #
     # model.load_state_dict(checkpoint['model'])
     # config.best_score = checkpoint['best_score']
-    model = torch.load(os.path.join(config.save_path,'model.pkl'))
+    model = torch.load(os.path.join(config.save_path,'model.pkl'), map_location=lambda storage, loc: storage)
     return model
 
 def save(model,config):
