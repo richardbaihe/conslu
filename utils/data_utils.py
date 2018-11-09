@@ -137,7 +137,51 @@ def json2iob_m2m():
             f_w.write('\n')
         f_w.close()
 
-def prepare_dataset(path,config,built_vocab=None,user_only=False):
+def build_vocab(path,user_only=False):
+    print('building dictionary first...')
+    data = open(path,"r",encoding="utf-8").readlines()
+    p_data = []
+    bot = []
+    for d in data:
+        if d=="\n":
+            bot=[]
+            continue
+        dd = d.replace("\n","").split("|||")
+        if len(dd)==1:
+            if user_only:
+                pass
+            else:
+                bot = dd[0].split()
+        else:
+            user = dd[0].split()
+            tag = dd[1].split()
+            intent = dd[2]
+            p_data.append([bot,user,tag,intent])
+    bots, currents, slots, intents = list(zip(*p_data))
+    vocab = list(set(flatten(currents+bots)))
+    slot_vocab = list(set(flatten(slots)))
+    intent_vocab = list(set(intents))
+
+    for rand_vocab in [vocab,slot_vocab,intent_vocab]:
+        rand_vocab.sort()
+    word2index={"<pad>" : 0, "<unk>" : 1, "<null>" : 2, "<s>" : 3, "</s>" : 4}
+    for vo in vocab:
+        if word2index.get(vo)==None:
+            word2index[vo] = len(word2index)
+
+    slot2index={"<pad>" : 0}
+    for vo in slot_vocab:
+        if slot2index.get(vo)==None:
+            slot2index[vo] = len(slot2index)
+
+    intent2index={}
+    for vo in intent_vocab:
+        if intent2index.get(vo)==None:
+            intent2index[vo] = len(intent2index)
+    return [word2index,slot2index,intent2index]
+
+
+def prepare_dataset(path,config,built_vocab,user_only=False):
     slm = config.slm_weight>0
     data = open(path,"r",encoding="utf-8").readlines()
     p_data = []
@@ -165,29 +209,8 @@ def prepare_dataset(path,config,built_vocab=None,user_only=False):
             temp = deepcopy(history)
             p_data.append([temp,user,tag,intent])
             history.append(user)
-    if built_vocab is None:
-        print('building dictionary first...')
-        historys, currents, slots, intents = list(zip(*p_data))
-        vocab = list(set(flatten(currents)))
-        slot_vocab = list(set(flatten(slots)))
-        intent_vocab = list(set(intents))
 
-        word2index={"<pad>" : 0, "<unk>" : 1, "<null>" : 2, "<s>" : 3, "</s>" : 4}
-        for vo in vocab:
-            if word2index.get(vo)==None:
-                word2index[vo] = len(word2index)
-
-        slot2index={"<pad>" : 0}
-        for vo in slot_vocab:
-            if slot2index.get(vo)==None:
-                slot2index[vo] = len(slot2index)
-
-        intent2index={}
-        for vo in intent_vocab:
-            if intent2index.get(vo)==None:
-                intent2index[vo] = len(intent2index)
-    else:
-        word2index, slot2index, intent2index = built_vocab
+    word2index, slot2index, intent2index = built_vocab
 
     for t in tqdm(p_data):
         for i,history in enumerate(t[0]):
@@ -205,10 +228,8 @@ def prepare_dataset(path,config,built_vocab=None,user_only=False):
             t.append(torch.LongTensor([1]+[0 for i in range(i-1)]).view(1, -1))
     else:
         c_data = p_data
-    if built_vocab is None:
-        return p_data,c_data, (word2index, slot2index, intent2index)
-    else:
-        return p_data,c_data
+
+    return p_data,c_data
 
 def prepare_sequence(seq, to_index):
     idxs = list(map(lambda w: to_index[w] if to_index.get(w) is not None else to_index["<unk>"], seq))
