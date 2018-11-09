@@ -154,20 +154,20 @@ def evaluation_multi(model, dev_data_1, dev_data_2,config):
             loss_i = intent_loss_function(intent_p, intent.view(-1))
             losses_slu.append((loss_s.item() + loss_i.item()))
         if config.slm_weight > 0:
-            slm_label = []
-            slm_pred = []
+            slm_label_all = []
+            slm_pred_all = []
             for i, batch in enumerate(data_loader(dev_data_2, 32, False)):
                 slm_h, slm_candi, slm_label = pad_to_batch_slm(batch, model.vocab)
                 slm_h = [hh.to(device) for hh in slm_h]
                 slm_candi = [hh.to(device) for hh in slm_candi]
                 slm_label = slm_label.to(device)
                 slm_p = model(slm_h, slm_candi, slm=True).view(-1, 2)
-                slm_label.extend(slm_label.view(-1).tolist())
-                slm_pred.extend(slm_p.max(1)[1].tolist())
+                slm_label_all.extend(slm_label.view(-1).tolist())
+                slm_pred_all.extend(slm_p.max(1)[1].tolist())
                 loss_slm = slm_loss(slm_p, slm_label.view(-1))
                 losses_slm.append(loss_slm.item())
-            slm_acc = accuracy_score(slm_label,slm_pred)
-            slm_recall = recall_score(slm_label, slm_pred)
+            slm_acc = accuracy_score(slm_label_all,slm_pred_all)
+            slm_recall = recall_score(slm_label_all, slm_pred_all)
         else:
             losses_slm.append(0)
             slm_acc = 0
