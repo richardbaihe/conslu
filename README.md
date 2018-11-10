@@ -1,4 +1,32 @@
-# SDEN-Pytorch
+# CON-SLU Pytorch
+
+## 1.Data
+
+### [kvret](https://nlp.stanford.edu/blog/a-new-multi-turn-multi-domain-task-oriented-dialogue-dataset/)
+
+### [M2M_Simulated Dialogue](https://github.com/google-research-datasets/simulated-dialogue)
+
+### DSTC2
+
+### DSTC4
+
+Time-decay https://github.com/MiuLab/Time-Decay-SLU
+
+没有slot
+
+
+
+## 2. requirement
+
+```
+pip install fuzzywuzzy
+```
+
+
+
+
+
+
 
 Pytorch implementation of [Sequential Dialogue Context Modeling for Spoken Language
 Understanding](https://arxiv.org/pdf/1705.03455.pdf)
@@ -63,7 +91,7 @@ BOT  :  You're welcome, stay safe.
 
 |                     | precision| recall | f1-score | support |
 |---------------------|----------|--------|----------|---------|
-| B-agenda            |0.256     |0.278   |0.267     |36       | 
+| B-agenda            |0.256     |0.278   |0.267     |36       |
 | I-agenda            |0.733     |0.407   |0.524     |54       |
 | B-date              |0.826     |0.836   |0.831     |911      |
 | I-date              |0.533     |0.885   |0.665     |549      |
