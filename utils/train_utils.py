@@ -9,12 +9,13 @@ from sklearn_crfsuite import metrics
 from sklearn.metrics import f1_score,accuracy_score,recall_score
 
 from utils import logger
-from model import SDEN, Seq2Seq, Context_Seq2Seq
+from model import SDEN, Seq2Seq, Context_Seq2Seq, MemNet
 from utils.data_utils import data_loader,pad_to_batch,pad_to_batch_slm
 
 model_dic = {'sden': SDEN,
              's2s': Seq2Seq,
-             'context_s2s': Context_Seq2Seq}
+             'context_s2s': Context_Seq2Seq,
+             'memnet': MemNet}
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
