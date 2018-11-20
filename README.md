@@ -4,11 +4,11 @@ Pytorch implementation of contextual SLU models:
 
 **m2mnet**
 
-![image-20181120132345516](/Users/crluser/Library/Application Support/typora-user-images/image-20181120132345516.png)
+![m2mnet](./images/m2mnet.png "m2mnet")
 
 **SDEN**
 
-![Model](/Users/crluser/Desktop/NAACL/conslu/images/model.png "SDEN")
+![Model](./images/sden.png "SDEN")
 
 ## 1.Data
 
