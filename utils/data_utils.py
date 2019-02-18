@@ -2,7 +2,7 @@ import torch
 import spacy
 from spacy.lang.en.stop_words import STOP_WORDS
 from fuzzywuzzy import fuzz
-import json, re, random
+import json, re, random, os
 from copy import deepcopy
 from tqdm import tqdm
 
@@ -136,6 +136,9 @@ def json2iob_m2m():
 
             f_w.write('\n')
         f_w.close()
+
+    for file_name in ['train.iob','test.iob','dev.iob']:
+        os.system('cat data/m2m/sim-R/'+ file_name+' data/m2m/sim-M/'+file_name+' > data/m2m/'+file_name)
 
 def build_vocab(path,user_only=False):
     print('building dictionary first...')

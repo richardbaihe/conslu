@@ -203,7 +203,8 @@ class MemNet(SDEN):
     def __init__(self, vocab_size, embed_size, hidden_size, slot_size, intent_size, dropout=0.3, pad_idx=0):
         super(MemNet,self).__init__(vocab_size, embed_size, hidden_size, slot_size, intent_size, dropout, pad_idx)
         self.decoder_2 = nn.LSTM(hidden_size * 8, hidden_size * 2, batch_first=True, bidirectional=True)
-
+        self.w_out = nn.Linear(hidden_size*4,hidden_size*4)
+        self.w_out_origin = nn.Linear(hidden_size*2,hidden_size*4)
     def forward(self, history, current, slm=False):
         batch_size = len(history)
         H = []  # encoded history
@@ -251,9 +252,10 @@ class MemNet(SDEN):
         m_weighted_sum = torch.bmm(attn_weight,M) # B, 1, 2H
 
         H = torch.cat([m_weighted_sum,C],dim=1) # B, 2, 2H
-
+        #H = self.w_out_origin(m_weighted_sum+C)
         if slm:
             h_slm = H.view(H.size(0),-1)  # B, 4H
+            h_slm = self.w_out(h_slm)
             slm_pro = self.slm_linear(h_slm)
             mask = torch.stack([torch.eq(length, 0).float(), torch.zeros(length.shape).float().to(device)], 1)
             slm_pro = (slm_pro + mask).view(batch_size, -1, 2)
@@ -263,6 +265,7 @@ class MemNet(SDEN):
         O_1 = self.dropout(O_1)
 
         context_H = H.view(H.size(0), 1, -1)
+        context_H = self.w_out(context_H)
         context_H = context_H.repeat(1, O_1.size(1), 1)
         O1_context = torch.cat([O_1, context_H], -1)
 
