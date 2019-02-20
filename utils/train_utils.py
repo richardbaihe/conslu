@@ -9,13 +9,14 @@ from sklearn_crfsuite import metrics
 from sklearn.metrics import f1_score,accuracy_score,recall_score
 
 from utils import logger
-from model import SDEN, Seq2Seq, Context_Seq2Seq, MemNet
+from model import SDEN, Seq2Seq, SDEN_plus, MemNet,MemNet_plus
 from utils.data_utils import data_loader,pad_to_batch,pad_to_batch_slm
 
 model_dic = {'sden': SDEN,
              's2s': Seq2Seq,
-             'context_s2s': Context_Seq2Seq,
-             'memnet': MemNet}
+             'sden_plus': SDEN_plus,
+             'memnet': MemNet,
+             'memnet_plus': MemNet_plus}
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -182,14 +183,15 @@ def evaluation_multi(model, dev_data_1, dev_data_2,config):
     return [intent_acc, slot_f1, slm_acc, slm_recall], [losses_all, losses_slm,losses_slu]
 
 
-def evaluation(model, dev_data):
+def evaluation(model, dev_data, config):
     model.eval()
+    dev_data_1, dev_data_2 = dev_data
     index2slot = {v: k for k, v in model.slot_vocab.items()}
     preds = []
     labels = []
     hits = 0
     with torch.no_grad():
-        for i, batch in enumerate(data_loader(dev_data, 32, False)):
+        for i, batch in enumerate(data_loader(dev_data_1, 32, False)):
             h, c, slot, intent = pad_to_batch(batch, model.vocab, model.slot_vocab)
             h = [hh.to(device) for hh in h]
             c = c.to(device)
@@ -200,7 +202,22 @@ def evaluation(model, dev_data):
             preds.extend([index2slot[i] for i in slot_p.max(1)[1].tolist()])
             labels.extend([index2slot[i] for i in slot.view(-1).tolist()])
             hits += torch.eq(intent_p.max(1)[1], intent.view(-1)).sum().item()
+        if config.slm_weight>0:
+            slm_label_all = []
+            slm_pred_all = []
+            for i, batch in enumerate(data_loader(dev_data_2, 32, False)):
+                slm_h, slm_candi, slm_label = pad_to_batch_slm(batch, model.vocab)
+                slm_h = [hh.to(device) for hh in slm_h]
+                slm_candi = [hh.to(device) for hh in slm_candi]
+                slm_label = slm_label.to(device)
+                slm_p = model(slm_h, slm_candi, slm=True).view(-1, 2)
+                slm_label_all.extend(slm_label.view(-1).tolist())
+                slm_pred_all.extend(slm_p.max(1)[1].tolist())
 
+            slm_acc = accuracy_score(slm_label_all, slm_pred_all)
+            slm_recall = recall_score(slm_label_all, slm_pred_all)
+            print('slm accuracy:\t%.5f' % slm_acc)
+            print('slm recall:\t%.5f' % slm_recall)
     intent_acc = hits / len(dev_data)
     print('intent accuracy:\t%.5f' % intent_acc)
 
@@ -216,7 +233,6 @@ def evaluation(model, dev_data):
     print(metrics.flat_classification_report(
         labels, preds, labels=sorted_labels, digits=3
     ))
-
 
 def model_init(built_vocab, config):
 
@@ -287,7 +303,7 @@ def get_config():
                         help='learning_rate')
     parser.add_argument('--dropout', type=float, default=0.3,
                         help='dropout')
-    parser.add_argument('--embed_size', type=int, default=100,
+    parser.add_argument('--embed_size', type=int, default=128,
                         help='embed_size')
     parser.add_argument('--hidden_size', type=int, default=64,
                         help='hidden_size')
@@ -301,7 +317,7 @@ def get_config():
                         help='name of modelfile')
     parser.add_argument('--new_model',action='store_true',
                          help='whether delete previous model or not')
-    parser.add_argument('--early_stop', type=int, default=5,
+    parser.add_argument('--early_stop', type=int, default=15,
                         help='whether delete previous model or not')
     config = parser.parse_args()
     config.save_path = os.path.join(config.save_path , config.task , config.model_name)
