@@ -28,14 +28,14 @@ def train(config):
 
     train_multitask(model, (train_data, train_slm_data), (dev_data, dev_slm_data), config)
     print('begin testing...')
-    evaluation(model, test_data)
+    evaluation(model, (test_data,test_slm_data),config)
 
 def test(config):
     print('begin testing...')
     model = model_load(config)
     vocab = [model.vocab, model.slot_vocab, model.intent_vocab]
     test_data, test_slm_data = prepare_dataset(config.test_path, config, vocab)
-    evaluation(model, test_data)
+    evaluation(model, (test_data,test_slm_data),config)
 
 if __name__ == "__main__":
     config = get_config()
