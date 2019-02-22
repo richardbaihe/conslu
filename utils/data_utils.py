@@ -239,7 +239,7 @@ def prepare_sequence(seq, to_index):
     return torch.LongTensor(idxs)
 
 def data_loader(train_data,batch_size,shuffle=False):
-    if shuffle: random.shuffle(train_data)
+    if shuffle: random.Random(2019).shuffle(train_data)
     sindex = 0
     eindex = batch_size
     while eindex < len(train_data):
