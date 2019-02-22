@@ -123,7 +123,7 @@ class Seq2Seq(SDEN):
 class SDEN_plus(SDEN):
     # concat context hidden state with o1 h every step
     def __init__(self, vocab_size, embed_size, hidden_size, slot_size, intent_size, dropout=0.3, pad_idx=0):
-        super(Context_Seq2Seq,self).__init__(vocab_size, embed_size, hidden_size, slot_size, intent_size, dropout, pad_idx)
+        super(SDEN_plus,self).__init__(vocab_size, embed_size, hidden_size, slot_size, intent_size, dropout, pad_idx)
         self.decoder_2 = nn.LSTM(hidden_size * 8, hidden_size * 2, batch_first=True, bidirectional=True)
     # context seq2seq
     def forward(self, history, current, slm=False):
@@ -279,7 +279,7 @@ class MemNet(SDEN):
 
 class MemNet_plus(MemNet):
     def __init__(self, vocab_size, embed_size, hidden_size, slot_size, intent_size, dropout=0.3, pad_idx=0):
-        super(MemNet,self).__init__(vocab_size, embed_size, hidden_size, slot_size, intent_size, dropout, pad_idx)
+        super(MemNet_plus,self).__init__(vocab_size, embed_size, hidden_size, slot_size, intent_size, dropout, pad_idx)
         self.w_out = nn.Linear(hidden_size*4,hidden_size*4)
     def forward(self, history, current, slm=False):
         batch_size = len(history)
