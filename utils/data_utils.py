@@ -162,6 +162,13 @@ def build_vocab(path,user_only=False):
             p_data.append([bot,user,tag,intent])
     bots, currents, slots, intents = list(zip(*p_data))
     vocab = list(set(flatten(currents+bots)))
+    vocab_freq = {}
+    for word in flatten(currents+bots):
+        if vocab_freq.get(word)==None:
+            vocab_freq[word]=1
+        else:
+            vocab_freq[word]+=1
+    vocab = [v for v, f in vocab_freq.items() if f > 1]
     slot_vocab = list(set(flatten(slots)))
     intent_vocab = list(set(intents))
 
@@ -239,7 +246,7 @@ def prepare_sequence(seq, to_index):
     return torch.LongTensor(idxs)
 
 def data_loader(train_data,batch_size,shuffle=False):
-    if shuffle: random.Random(2019).shuffle(train_data)
+    if shuffle: random.Random(24022019).shuffle(train_data)
     sindex = 0
     eindex = batch_size
     while eindex < len(train_data):
