@@ -19,15 +19,25 @@ model_dic = {'sden': SDEN,
              'memnet_plus': MemNet_plus}
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
+torch.manual_seed(2402201901010)
+torch.cuda.manual_seed_all(2402201901010)
 
 def train_multitask(model, train_data, dev_data, config):
     log = logger.Logger(config.save_path)
 
     train_data_1, train_data_2 = train_data
     dev_data_1, dev_data_2 = dev_data
+    slm_num = 0
 
-    slm_loss = nn.CrossEntropyLoss()
+    slm_pos = torch.tensor(0.0)
+    for data in train_data_2:
+        slm_num += data[-1].shape[-1]
+        slm_pos += torch.sum(data[-1]).type_as(torch.tensor(0.3))
+    neg_weight = slm_pos / slm_num
+    pos_weight = 1 - neg_weight
+    # slm_loss_weight = torch.tensor([neg_weight, pos_weight]).cuda()
+
+    slm_loss = nn.CrossEntropyLoss()#slm_loss_weight)
     slot_loss_function = nn.CrossEntropyLoss(ignore_index=0)
     intent_loss_function = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=config.lr)
@@ -67,6 +77,10 @@ def train_multitask(model, train_data, dev_data, config):
                 losses_slm.append(loss_slm)
 
             optimizer.zero_grad()
+            # if epoch >= config.epochs//4:
+            #     config.slm_weight = config.slm_weight/2
+            # elif epoch >= config.epochs//2:
+            #     config.slm_weight = config.slm_weight/4
             loss = loss_slm * config.slm_weight + (1 - config.slm_weight) * loss_slu
             losses_all.append(loss.item())
 
@@ -114,12 +128,12 @@ def train_multitask(model, train_data, dev_data, config):
         log_printer(log, 'eval', epoch="{}/{}".format(epoch, config.epochs),
                     iters="{}/{}".format(i, len(train_data_1) // config.batch_size),
                     metrics=metrics_dict)
-
-        if metric[1] > config.best_score:
+        early_metric = loss[0]
+        if early_metric > config.best_score:
             slu_f1_scores = []
-            config.best_score = metric[1]
+            config.best_score = early_metric
             save(model, config)
-        slu_f1_scores.append(metric[1])
+        slu_f1_scores.append(early_metric)
         if len(slu_f1_scores) > config.early_stop:
             print('Early stop after f1 score did not increase after {} epochs'.format(config.early_stop))
             return
@@ -218,7 +232,7 @@ def evaluation(model, dev_data, config):
             slm_recall = recall_score(slm_label_all, slm_pred_all)
             print('slm accuracy:\t%.5f' % slm_acc)
             print('slm recall:\t%.5f' % slm_recall)
-    intent_acc = hits / len(dev_data)
+    intent_acc = hits / len(dev_data_1)
     print('intent accuracy:\t%.5f' % intent_acc)
 
     sorted_labels = sorted(
@@ -294,7 +308,7 @@ def get_config():
     parser = argparse.ArgumentParser()
     parser.add_argument('--task',type=str, default='kvret', help='dataset selection of kvret or m2m')
     parser.add_argument('--mode', type=str, default='train')
-    parser.add_argument('--epochs', type=int, default=5,
+    parser.add_argument('--epochs', type=int, default=30,
                         help='num_epochs')
     parser.add_argument('--pre_dataset', action='store_true')
     parser.add_argument('--batch_size', type=int, default=64,
@@ -303,7 +317,7 @@ def get_config():
                         help='learning_rate')
     parser.add_argument('--dropout', type=float, default=0.3,
                         help='dropout')
-    parser.add_argument('--embed_size', type=int, default=128,
+    parser.add_argument('--embed_size', type=int, default=100,
                         help='embed_size')
     parser.add_argument('--hidden_size', type=int, default=64,
                         help='hidden_size')
@@ -317,7 +331,7 @@ def get_config():
                         help='name of modelfile')
     parser.add_argument('--new_model',action='store_true',
                          help='whether delete previous model or not')
-    parser.add_argument('--early_stop', type=int, default=15,
+    parser.add_argument('--early_stop', type=int, default=5,
                         help='whether delete previous model or not')
     config = parser.parse_args()
     config.save_path = os.path.join(config.save_path , config.task , config.model_name)
