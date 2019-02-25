@@ -19,8 +19,8 @@ model_dic = {'sden': SDEN,
              'memnet_plus': MemNet_plus}
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-torch.manual_seed(2402201901010)
-torch.cuda.manual_seed_all(2402201901010)
+torch.manual_seed(24022019010102019)
+torch.cuda.manual_seed_all(24022019010102019)
 
 def train_multitask(model, train_data, dev_data, config):
     log = logger.Logger(config.save_path)
