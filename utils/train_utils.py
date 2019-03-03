@@ -22,11 +22,12 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 torch.manual_seed(24022019010102019)
 torch.cuda.manual_seed_all(24022019010102019)
 
-def train_multitask(model, train_data, dev_data, config):
+def train_multitask(model, train_data, dev_data, config,test_data=None):
     log = logger.Logger(config.save_path)
-
+    config.best_score=-100
     train_data_1, train_data_2 = train_data
     dev_data_1, dev_data_2 = dev_data
+    test_data_1, test_data_2 = test_data
     slm_num = 0
 
     slm_pos = torch.tensor(0.0)
@@ -35,7 +36,7 @@ def train_multitask(model, train_data, dev_data, config):
         slm_pos += torch.sum(data[-1]).type_as(torch.tensor(0.3))
     neg_weight = slm_pos / slm_num
     pos_weight = 1 - neg_weight
-    # slm_loss_weight = torch.tensor([neg_weight, pos_weight]).cuda()
+    slm_loss_weight = torch.tensor([neg_weight, pos_weight]).cuda()
 
     slm_loss = nn.CrossEntropyLoss()#slm_loss_weight)
     slot_loss_function = nn.CrossEntropyLoss(ignore_index=0)
@@ -80,7 +81,7 @@ def train_multitask(model, train_data, dev_data, config):
             # if epoch >= config.epochs//4:
             #     config.slm_weight = config.slm_weight/2
             # elif epoch >= config.epochs//2:
-            #     config.slm_weight = config.slm_weight/4
+            #config.slm_weight = config.slm_weight/(epoch+1)
             loss = loss_slm * config.slm_weight + (1 - config.slm_weight) * loss_slu
             losses_all.append(loss.item())
 
@@ -128,13 +129,14 @@ def train_multitask(model, train_data, dev_data, config):
         log_printer(log, 'eval', epoch="{}/{}".format(epoch, config.epochs),
                     iters="{}/{}".format(i, len(train_data_1) // config.batch_size),
                     metrics=metrics_dict)
-        early_metric = loss[0]
+        early_metric = -loss[2]#metric[1]
         if early_metric > config.best_score:
             slu_f1_scores = []
             config.best_score = early_metric
+            evaluation(model, (test_data_1,test_data_2),config)
             save(model, config)
         slu_f1_scores.append(early_metric)
-        if len(slu_f1_scores) > config.early_stop:
+        if len(slu_f1_scores) > config.early_stop and config.early_stop!=0:
             print('Early stop after f1 score did not increase after {} epochs'.format(config.early_stop))
             return
 
@@ -188,14 +190,22 @@ def evaluation_multi(model, dev_data_1, dev_data_2,config):
             losses_slm.append(0)
             slm_acc = 0
             slm_recall = 0
+    slot_to_index={k: v for k, v in model.slot_vocab.items()}
+    sorted_labels = list(set(slot_label) - {slot_to_index['O'], slot_to_index['<pad>']})
 
     intent_acc = accuracy_score(intent_label, intent_pred)
-    slot_f1 = f1_score(slot_label,slot_pred,average='micro')
+    slot_f1 = f1_score(slot_label,slot_pred,average='micro',labels=sorted_labels)
+    
+    preds = [[y] for y in slot_pred]
+    labels = [[y] for y in slot_label]
+
+    slot_f1 = float(metrics.flat_classification_report(
+        labels, preds, labels=sorted_labels, digits=3).split('\n')[-2].split()[-2])
+
     losses_slm = np.mean(losses_slm)
     losses_slu = np.mean(losses_slu)
     losses_all = losses_slu + losses_slm
     return [intent_acc, slot_f1, slm_acc, slm_recall], [losses_all, losses_slm,losses_slu]
-
 
 def evaluation(model, dev_data, config):
     model.eval()
@@ -331,6 +341,8 @@ def get_config():
                         help='name of modelfile')
     parser.add_argument('--new_model',action='store_true',
                          help='whether delete previous model or not')
+    parser.add_argument('--multi_domain',action='store_true',
+                         help='whether use multi-domain dataset or not')
     parser.add_argument('--early_stop', type=int, default=5,
                         help='whether delete previous model or not')
     config = parser.parse_args()
