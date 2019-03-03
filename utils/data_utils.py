@@ -28,6 +28,36 @@ def get_ngram(tokens):
             ngram.append((" ".join(tokens[s: s + i]), s, i + s))
     return ngram
 
+def kvret2kvret_star(config):
+    origin_file_set = ['kvret/train',
+                       'kvret/dev',
+                       'kvret/test']
+    file_set = ['kvret_star/train',
+                'kvret_star/dev',
+                'kvret_star/test']
+    def sessions_write(sessions,f_w):
+        for session in sessions:
+            f_w.writelines(session)
+        f_w.write('\n')
+    for origin_file_name,file_name in zip(origin_file_set,file_set):
+        f_r = open('data/' + origin_file_name + '.iob', 'r', encoding='utf-8').readlines()
+        f_w = open('data/' + file_name + '.iob', 'w', encoding='utf-8')
+        sessions=[]
+        current_session = []
+        for line in f_r:
+            if line=='\n':
+                sessions.append(current_session)
+                current_session = []
+                if len(sessions) > 1:
+                    sessions_write(sessions,f_w)
+                    sessions=[]
+                elif random.Random(24022019).randint(1,9) < 6:
+                    continue
+                else:
+                    sessions_write(sessions, f_w)
+                    sessions = []
+            else:
+                current_session.append(line)
 def json2iob_kvret():
 
     file_set = ['train',
@@ -98,7 +128,6 @@ def json2iob_kvret():
                     f_w.write(assistant + '\n')
             f_w.write('\n')
         f_w.close()
-
 def json2iob_m2m():
     file_set = ['sim-M/dev',
                 'sim-M/train',
@@ -241,9 +270,11 @@ def prepare_dataset(path,config,built_vocab,user_only=False):
 
     return p_data,c_data
 
+
 def prepare_sequence(seq, to_index):
     idxs = list(map(lambda w: to_index[w] if to_index.get(w) is not None else to_index["<unk>"], seq))
     return torch.LongTensor(idxs)
+
 
 def data_loader(train_data,batch_size,shuffle=False):
     if shuffle: random.Random(24022019).shuffle(train_data)
@@ -310,7 +341,6 @@ def pad_to_batch_slm(batch, w_to_ix):  # for bAbI dataset
     return historys, candidates, labels
 
 
-
 def pad_to_batch(batch, w_to_ix,s_to_ix): # for bAbI dataset
     history,current,slot,intent = list(zip(*batch))
     max_history = max([len(h) for h in history])
@@ -348,6 +378,7 @@ def pad_to_batch(batch, w_to_ix,s_to_ix): # for bAbI dataset
     intents = torch.cat(intent)
 
     return historys, currents, slots, intents
+
 
 def pad_to_history(history, x_to_ix): # this is for inference
 
