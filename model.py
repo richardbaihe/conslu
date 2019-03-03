@@ -13,7 +13,7 @@ class SDEN(nn.Module):
         self.bigru_m = nn.GRU(embed_size,hidden_size,batch_first=True,bidirectional=True)
         self.bigru_c = nn.GRU(embed_size,hidden_size,batch_first=True,bidirectional=True)
         self.context_encoder = nn.Sequential(nn.Linear(hidden_size*4,hidden_size*2),
-                                                               nn.Sigmoid())
+                                                               nn.SELU())
         self.session_encoder = nn.GRU(hidden_size*2,hidden_size*2,batch_first=True,bidirectional=True)
 
         self.decoder_1 = nn.GRU(embed_size,hidden_size*2,batch_first=True,bidirectional=True)
