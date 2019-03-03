@@ -26,7 +26,7 @@ def train(config):
     dev_data, dev_slm_data = prepare_dataset(config.dev_path, config, vocab)
     test_data, test_slm_data = prepare_dataset(config.test_path, config, vocab)
 
-    train_multitask(model, (train_data, train_slm_data), (dev_data, dev_slm_data), config)
+    train_multitask(model, (train_data, train_slm_data), (dev_data, dev_slm_data), config, (test_data, test_slm_data))
     print('begin testing...')
     evaluation(model, (test_data,test_slm_data),config)
 
@@ -39,14 +39,13 @@ def test(config):
 
 if __name__ == "__main__":
     config = get_config()
-
     config.train_path = os.path.join('data',config.task,'train.iob')
     config.dev_path = os.path.join('data',config.task,'dev.iob')
     config.test_path = os.path.join('data',config.task,'test.iob')
 
     if config.pre_dataset:
         json2iob()
-
+        kvret2kvret_star(config)
     if config.mode == 'train':
         train(config)
     else:
