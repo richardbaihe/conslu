@@ -5,7 +5,7 @@ from fuzzywuzzy import fuzz
 import json, re, random, os
 from copy import deepcopy
 from tqdm import tqdm
-
+from pytorch_pretrained_bert import BertTokenizer
 flatten = lambda l: [item for sublist in l for item in sublist]
 nlp = spacy.load('en_core_web_sm')
 
@@ -169,7 +169,7 @@ def json2iob_m2m():
     for file_name in ['train.iob','test.iob','dev.iob']:
         os.system('cat data/m2m/sim-R/'+ file_name+' data/m2m/sim-M/'+file_name+' > data/m2m/'+file_name)
 
-def build_vocab(path,user_only=False):
+def build_vocab(path, user_only=False, bert=False):
     print('building dictionary first...')
     data = open(path,"r",encoding="utf-8").readlines()
     p_data = []
@@ -203,12 +203,12 @@ def build_vocab(path,user_only=False):
 
     for rand_vocab in [vocab,slot_vocab,intent_vocab]:
         rand_vocab.sort()
-    word2index={"<pad>" : 0, "<unk>" : 1, "<null>" : 2, "<s>" : 3, "</s>" : 4}
+    word2index={"[PAD]" : 0, "[UNK]" : 1, "[NULL]" : 2, "<s>" : 3, "</s>" : 4}
     for vo in vocab:
         if word2index.get(vo)==None:
             word2index[vo] = len(word2index)
 
-    slot2index={"<pad>" : 0}
+    slot2index={"[PAD]" : 0}
     for vo in slot_vocab:
         if slot2index.get(vo)==None:
             slot2index[vo] = len(slot2index)
@@ -217,6 +217,9 @@ def build_vocab(path,user_only=False):
     for vo in intent_vocab:
         if intent2index.get(vo)==None:
             intent2index[vo] = len(intent2index)
+    if bert:
+        tokenizer = BertTokenizer.from_pretrained('./bert-base-uncased')
+        word2index=tokenizer.vocab
     return [word2index,slot2index,intent2index]
 
 
@@ -225,14 +228,14 @@ def prepare_dataset(path,config,built_vocab,user_only=False):
     data = open(path,"r",encoding="utf-8").readlines()
     p_data = []
     c_data = []
-    history=[["<null>"]]
+    history=[["[NULL]"]]
     for d in data:
         if d=="\n":
             if slm:
                 temp = deepcopy(history)
                 for i in range(1,len(history)):
                     c_data.append([temp[:i],temp[i:]])
-            history=[["<null>"]]
+            history=[["[NULL]"]]
             continue
         dd = d.replace("\n","").split("|||")
         if len(dd)==1:
@@ -244,9 +247,10 @@ def prepare_dataset(path,config,built_vocab,user_only=False):
         else:
             user = dd[0].split()
             tag = dd[1].split()
+            head = [1]*len(user)
             intent = dd[2]
             temp = deepcopy(history)
-            p_data.append([temp,user,tag,intent])
+            p_data.append([temp,user,tag,intent,head])
             history.append(user)
 
     word2index, slot2index, intent2index = built_vocab
@@ -258,6 +262,7 @@ def prepare_dataset(path,config,built_vocab,user_only=False):
         t[1] = prepare_sequence(t[1], word2index).view(1, -1)
         t[2] = prepare_sequence(t[2], slot2index).view(1, -1)
         t[3] = torch.LongTensor([intent2index[t[3]]]).view(1,-1)
+        t[4] = torch.LongTensor([t[4]]).view(1, -1)
     if slm:
         for t in tqdm(c_data):
             for i, history in enumerate(t[0]):
@@ -272,8 +277,78 @@ def prepare_dataset(path,config,built_vocab,user_only=False):
 
 
 def prepare_sequence(seq, to_index):
-    idxs = list(map(lambda w: to_index[w] if to_index.get(w) is not None else to_index["<unk>"], seq))
+    idxs = list(map(lambda w: to_index[w] if to_index.get(w) is not None else to_index["[UNK]"], seq))
     return torch.LongTensor(idxs)
+def index2seq(index, to_index):
+    to_seq = {j:i for i,j in to_index.items()}
+    seq = list(map(lambda w: to_seq[w], index))
+    return seq
+
+def prepare_dataset_bert(path,config,built_vocab,user_only=False):
+    tokenizer = BertTokenizer.from_pretrained('./bert-base-uncased')
+    slm = config.slm_weight>0
+    data = open(path,"r",encoding="utf-8").readlines()
+    p_data = []
+    c_data = []
+    history=[["[CLS]"]]
+    for d in data:
+        if d=="\n":
+            if slm:
+                temp = deepcopy(history)
+                for i in range(1,len(history)):
+                    c_data.append([temp[:i],temp[i:]])
+            history=[["[CLS]"]]
+            continue
+        dd = d.replace("\n","").split("|||")
+        if len(dd)==1:
+            if user_only:
+                pass
+            else:
+                #bot = dd[0].split()
+                bot = ["[CLS]"]+tokenizer.tokenize(dd[0])+['[SEP]']
+                history.append(bot)
+        else:
+            #user = dd[0].split()
+            words = ["[CLS]"]+dd[0].split()+ ["[SEP]"]
+            tags = ["[PAD]"] +dd[1].split()+["[PAD]"]
+            user = []
+            tag = []
+            head = []
+            for w, t in zip(words, tags):
+                tokens = tokenizer.tokenize(w) if w not in ("[CLS]", "[SEP]") else [w]
+                is_head = [1]+[0]* (len(tokens) - 1)
+                t = [t] + ["[PAD]"] * (len(tokens) - 1)
+                head.extend(is_head)
+                user.extend(tokens)
+                tag.extend(t)
+            assert len(user)==len(head)==len(tag)
+            intent = dd[2]
+            temp = deepcopy(history)
+            p_data.append([temp,user,tag,intent,head])
+            history.append(user)
+
+    word2index, slot2index, intent2index = built_vocab
+
+    for t in tqdm(p_data):
+        for i, history in enumerate(t[0]):
+            # t[0][i] = prepare_sequence(history, word2index).view(1, -1)
+            t[0][i] = torch.LongTensor(prepare_sequence(history,word2index)).view(1, -1)
+        # t[1] = prepare_sequence(t[1], word2index).view(1, -1)
+        t[1] = torch.LongTensor(prepare_sequence(t[1],word2index)).view(1, -1)
+        t[2] = prepare_sequence(t[2], slot2index).view(1, -1)
+        t[3] = torch.LongTensor([intent2index[t[3]]]).view(1,-1)
+        t[4] = torch.LongTensor([t[4]]).view(1, -1)
+    if slm:
+        for t in tqdm(c_data):
+            for i, history in enumerate(t[0]):
+                t[0][i] = torch.LongTensor(prepare_sequence(history,word2index)).view(1, -1)
+            for i, candidate in enumerate(t[1]):
+                t[1][i] = torch.LongTensor(prepare_sequence(candidate,word2index)).view(1, -1)
+            t.append(torch.LongTensor([1]+[0 for i in range(i-1)]).view(1, -1))
+    else:
+        c_data = p_data
+
+    return p_data,c_data
 
 
 def data_loader(train_data,batch_size,shuffle=False):
@@ -306,12 +381,12 @@ def pad_to_batch_slm(batch, w_to_ix):  # for bAbI dataset
         for j in range(len(history[i])):
             if history[i][j].size(1) < max_len:
                 history_p_t.append(torch.cat([history[i][j], torch.LongTensor(
-                    [w_to_ix['<pad>']] * (max_len - history[i][j].size(1))).view(1, -1)], 1))
+                    [w_to_ix['[PAD]']] * (max_len - history[i][j].size(1))).view(1, -1)], 1))
             else:
                 history_p_t.append(history[i][j])
 
         while len(history_p_t) < max_history:
-            history_p_t.append(torch.LongTensor([w_to_ix['<pad>']] * max_len).view(1, -1))
+            history_p_t.append(torch.LongTensor([w_to_ix['[PAD]']] * max_len).view(1, -1))
 
         history_p_t = torch.cat(history_p_t)
         historys.append(history_p_t)
@@ -320,12 +395,12 @@ def pad_to_batch_slm(batch, w_to_ix):  # for bAbI dataset
         for j in range(len(candidate[i])):
             if candidate[i][j].size(1) < max_len_candidate:
                 candidate_p_t.append(torch.cat([candidate[i][j], torch.LongTensor(
-                    [w_to_ix['<pad>']] * (max_len_candidate - candidate[i][j].size(1))).view(1, -1)], 1))
+                    [w_to_ix['[PAD]']] * (max_len_candidate - candidate[i][j].size(1))).view(1, -1)], 1))
             else:
                 candidate_p_t.append(candidate[i][j])
 
         while len(candidate_p_t) < max_candidate:
-            candidate_p_t.append(torch.LongTensor([w_to_ix['<pad>']] * max_len_candidate).view(1, -1))
+            candidate_p_t.append(torch.LongTensor([w_to_ix['[PAD]']] * max_len_candidate).view(1, -1))
 
         candidate_p_t = torch.cat(candidate_p_t)
         candidates.append(candidate_p_t)
@@ -342,42 +417,49 @@ def pad_to_batch_slm(batch, w_to_ix):  # for bAbI dataset
 
 
 def pad_to_batch(batch, w_to_ix,s_to_ix): # for bAbI dataset
-    history,current,slot,intent = list(zip(*batch))
+    history,current,slot,intent,head = list(zip(*batch))
     max_history = max([len(h) for h in history])
     max_len = max([h.size(1) for h in flatten(history)])
     max_current = max([c.size(1) for c in current])
+    max_head = max([h.size(1) for h in head])
     max_slot = max([s.size(1) for s in slot])
+    assert max_slot==max_current==max_head
 
-    historys, currents, slots = [], [], []
+    historys, currents, slots,heads = [], [], [], []
     for i in range(len(batch)):
         history_p_t = []
         for j in range(len(history[i])):
             if history[i][j].size(1) < max_len:
-                history_p_t.append(torch.cat([history[i][j], torch.LongTensor([w_to_ix['<pad>']] * (max_len - history[i][j].size(1))).view(1, -1)], 1))
+                history_p_t.append(torch.cat([history[i][j], torch.LongTensor([w_to_ix['[PAD]']] * (max_len - history[i][j].size(1))).view(1, -1)], 1))
             else:
                 history_p_t.append(history[i][j])
 
         while len(history_p_t) < max_history:
-            history_p_t.append(torch.LongTensor([w_to_ix['<pad>']] * max_len).view(1, -1))
+            history_p_t.append(torch.LongTensor([w_to_ix['[PAD]']] * max_len).view(1, -1))
 
         history_p_t = torch.cat(history_p_t)
         historys.append(history_p_t)
 
         if current[i].size(1) < max_current:
-            currents.append(torch.cat([current[i], torch.LongTensor([w_to_ix['<pad>']] * (max_current - current[i].size(1))).view(1, -1)], 1))
+            currents.append(torch.cat([current[i], torch.LongTensor(
+                [w_to_ix['[PAD]']] * (max_current - current[i].size(1))).view(1, -1)], 1))
+            heads.append(torch.cat([head[i], torch.LongTensor(
+                [0] * (max_current - current[i].size(1))).view(1, -1)], 1))
+            slots.append(torch.cat([slot[i], torch.LongTensor(
+                [s_to_ix['[PAD]']] * (max_current - slot[i].size(1))).view(1, -1)],1))
         else:
+            heads.append(head[i])
             currents.append(current[i])
-
-        if slot[i].size(1) < max_slot:
-            slots.append(torch.cat([slot[i], torch.LongTensor([s_to_ix['<pad>']] * (max_slot - slot[i].size(1))).view(1, -1)], 1))
-        else:
             slots.append(slot[i])
+
+
 
     currents = torch.cat(currents)
     slots = torch.cat(slots)
     intents = torch.cat(intent)
+    heads = torch.cat(heads)
 
-    return historys, currents, slots, intents
+    return historys, currents, slots, intents, heads
 
 
 def pad_to_history(history, x_to_ix): # this is for inference
@@ -387,7 +469,7 @@ def pad_to_history(history, x_to_ix): # this is for inference
     for i in range(len(history)):
         h = prepare_sequence(history[i],x_to_ix).unsqueeze(0)
         if len(history[i]) < max_x:
-            x_p.append(torch.cat([h,torch.LongTensor([x_to_ix['<pad>']] * (max_x - h.size(1))).view(1, -1)], 1))
+            x_p.append(torch.cat([h,torch.LongTensor([x_to_ix['[PAD]']] * (max_x - h.size(1))).view(1, -1)], 1))
         else:
             x_p.append(h)
 

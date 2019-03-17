@@ -3,6 +3,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_packed_sequence as unpack
 from torch.nn.utils.rnn import pack_padded_sequence as pack
+import logging
+from pytorch_pretrained_bert import BertModel,BertConfig
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 class SDEN(nn.Module):
     def __init__(self,vocab_size,embed_size,hidden_size,slot_size,intent_size,dropout=0.3,pad_idx=0):
@@ -352,4 +355,25 @@ class MemNet_plus(MemNet):
         intent_prob = self.intent_linear(S)
         slot_prob = self.slot_linear(O_2.contiguous().view(O_2.size(0) * O_2.size(1), -1))
 
+        return slot_prob, intent_prob
+
+class Seq2Seq_Bert(SDEN):
+    # simple seq2seq without any context information
+    def __init__(self,vocab_size,embed_size,hidden_size,slot_size,intent_size,dropout=0.3,pad_idx=0):
+        super(Seq2Seq_Bert, self).__init__(vocab_size,embed_size,hidden_size,slot_size,intent_size,dropout,pad_idx)
+        self.model = BertModel.from_pretrained('./bert-base-uncased')
+        self.config = self.model.config
+        self.hidden_size = self.config.hidden_size
+        self.intent_linear = nn.Linear(self.hidden_size,intent_size)
+        self.slot_linear = nn.Linear(self.hidden_size,slot_size)
+        self.dropout = nn.Dropout(self.config.hidden_dropout_prob)
+
+    def forward(self, history, current, slm=False):
+        encoded_layers, pooled_output = self.model(current,output_all_encoded_layers=False)
+        #pooled_output = self.dropout(pooled_output) #batch hiddensize
+        encoded_layers = self.dropout(encoded_layers) #batch seq_len hiddensize
+        pooled_output = encoded_layers[:,0]
+        #encoded_layers = encoded_layers[1:]
+        slot_prob = self.slot_linear(encoded_layers.view(-1,self.hidden_size))
+        intent_prob = self.intent_linear(pooled_output)
         return slot_prob, intent_prob

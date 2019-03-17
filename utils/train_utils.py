@@ -4,39 +4,41 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-
+from pytorch_pretrained_bert import BertTokenizer
 from sklearn_crfsuite import metrics
 from sklearn.metrics import f1_score,accuracy_score,recall_score
 
 from utils import logger
-from model import SDEN, Seq2Seq, SDEN_plus, MemNet,MemNet_plus
-from utils.data_utils import data_loader,pad_to_batch,pad_to_batch_slm
+from model import *
+from utils.data_utils import data_loader,pad_to_batch,pad_to_batch_slm,index2seq
 
 model_dic = {'sden': SDEN,
              's2s': Seq2Seq,
              'sden_plus': SDEN_plus,
              'memnet': MemNet,
-             'memnet_plus': MemNet_plus}
+             'memnet_plus': MemNet_plus,
+             's2s_bert': Seq2Seq_Bert}
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 torch.manual_seed(24022019010102019)
 torch.cuda.manual_seed_all(24022019010102019)
 
-def train_multitask(model, train_data, dev_data, config,test_data=None):
+def print_decode_result(model,utterance,slot_label,slot_pred,intent_pred):
+    print_utterance = index2seq(utterance,model.vocab)
+    print_slot_label = index2seq(slot_label,model.slot_vocab)
+    print_slot_pred = index2seq(slot_pred,model.slot_vocab)
+    print_intent_pred = index2seq(intent_pred,model.intent_vocab)
+    print("current_utterance: {}\nslot_label: {}\nslot_pred: {}\nintent: {}".format(print_utterance,
+                                                                                    print_slot_label,
+                                                                                    print_slot_pred,
+                                                                                    print_intent_pred))
+
+def train_multitask(model, train_data, dev_data, config,test_data):
     log = logger.Logger(config.save_path)
     config.best_score=-100
     train_data_1, train_data_2 = train_data
     dev_data_1, dev_data_2 = dev_data
     test_data_1, test_data_2 = test_data
-    slm_num = 0
-
-    slm_pos = torch.tensor(0.0)
-    for data in train_data_2:
-        slm_num += data[-1].shape[-1]
-        slm_pos += torch.sum(data[-1]).type_as(torch.tensor(0.3))
-    neg_weight = slm_pos / slm_num
-    pos_weight = 1 - neg_weight
-    slm_loss_weight = torch.tensor([neg_weight, pos_weight]).cuda()
 
     slm_loss = nn.CrossEntropyLoss()#slm_loss_weight)
     slot_loss_function = nn.CrossEntropyLoss(ignore_index=0)
@@ -53,7 +55,7 @@ def train_multitask(model, train_data, dev_data, config,test_data=None):
         scheduler.step()
         for i, (batch_1, batch_2) in enumerate(zip(data_loader(train_data_1, config.batch_size, True),
                                                    data_loader(train_data_2, config.batch_size, True))):
-            h, c, slot, intent = pad_to_batch(batch_1, model.vocab, model.slot_vocab)
+            h, c, slot, intent,head = pad_to_batch(batch_1, model.vocab, model.slot_vocab)
             h = [hh.to(device) for hh in h]
             c = c.to(device)
             slot = slot.to(device)
@@ -78,10 +80,6 @@ def train_multitask(model, train_data, dev_data, config,test_data=None):
                 losses_slm.append(loss_slm)
 
             optimizer.zero_grad()
-            # if epoch >= config.epochs//4:
-            #     config.slm_weight = config.slm_weight/2
-            # elif epoch >= config.epochs//2:
-            #config.slm_weight = config.slm_weight/(epoch+1)
             loss = loss_slm * config.slm_weight + (1 - config.slm_weight) * loss_slu
             losses_all.append(loss.item())
 
@@ -89,25 +87,9 @@ def train_multitask(model, train_data, dev_data, config,test_data=None):
             optimizer.step()
 
             if i % 40 == 0:
-                # SLU
-                intent_acc = accuracy_score(intent.view(-1).tolist(), intent_p.max(1)[1].tolist())
-                slot_f1 = f1_score(slot.view(-1).tolist(), slot_p.max(1)[1].tolist(), average='micro')
-                # SLM
-                if config.slm_weight > 0:
-                    label = slm_label.view(-1).tolist()
-                    pred = slm_p.max(1)[1].tolist()
-                    slm_acc = accuracy_score(label, pred)
-                    slm_recall = recall_score(label, pred)
-                else:
-                    slm_acc = 0
-                    slm_recall = 0
                 metrics_dict = {'loss_all': np.round(np.mean(losses_all),2),
                                 'loss_slm': np.round(np.mean(losses_slm),2),
                                 'losses_slu': np.round(np.mean(losses_slu),2),
-                                # 'intent_acc': np.round(intent_acc,2),
-                                # 'slot_f1': np.round(slot_f1,2),
-                                # 'slm_acc': np.round(slm_acc,2),
-                                # 'slm_recall': np.round(slm_recall,2)
                                 }
                 log_printer(log, "train", epoch="{}/{}".format(epoch, config.epochs),
                             iters="{}/{}".format(i, len(train_data_1) // config.batch_size),
@@ -115,6 +97,11 @@ def train_multitask(model, train_data, dev_data, config,test_data=None):
                 losses_all = []
                 losses_slu = []
                 losses_slm = []
+                print_decode_result(model,
+                                    c[0].tolist(),
+                                    slot[0].tolist(),
+                                    slot_p.max(1)[1].tolist()[:len(slot[0].tolist())],
+                                    [intent_p.max(1)[1].tolist()[0]])
 
         metric, loss = evaluation_multi(model, dev_data_1, dev_data_2, config)
 
@@ -133,7 +120,7 @@ def train_multitask(model, train_data, dev_data, config,test_data=None):
         if early_metric > config.best_score:
             slu_f1_scores = []
             config.best_score = early_metric
-            evaluation(model, (test_data_1,test_data_2),config)
+            test(model, (test_data_1,test_data_2),config)
             save(model, config)
         slu_f1_scores.append(early_metric)
         if len(slu_f1_scores) > config.early_stop and config.early_stop!=0:
@@ -155,7 +142,7 @@ def evaluation_multi(model, dev_data_1, dev_data_2,config):
     losses_slm = []
     with torch.no_grad():
         for i, batch in enumerate(data_loader(dev_data_1, 32, False)):
-            h, c, slot, intent = pad_to_batch(batch, model.vocab, model.slot_vocab)
+            h, c, slot, intent, head = pad_to_batch(batch, model.vocab, model.slot_vocab)
             h = [hh.to(device) for hh in h]
             c = c.to(device)
             slot = slot.to(device)
@@ -165,8 +152,8 @@ def evaluation_multi(model, dev_data_1, dev_data_2,config):
             intent_label.extend(intent.view(-1).tolist())
             intent_pred.extend(intent_p.max(1)[1].tolist())
 
-            slot_label.extend(slot.view(-1).tolist())
-            slot_pred.extend(slot_p.max(1)[1].tolist())
+            slot_label.extend([s for s, h in zip(slot.view(-1).tolist(), head.view(-1).tolist()) if h == 1])
+            slot_pred.extend([s for s, h in zip(slot_p.max(1)[1].tolist(), head.view(-1).tolist()) if h == 1])
 
             loss_s = slot_loss_function(slot_p, slot.view(-1))
             loss_i = intent_loss_function(intent_p, intent.view(-1))
@@ -190,8 +177,9 @@ def evaluation_multi(model, dev_data_1, dev_data_2,config):
             losses_slm.append(0)
             slm_acc = 0
             slm_recall = 0
+
     slot_to_index={k: v for k, v in model.slot_vocab.items()}
-    sorted_labels = list(set(slot_label) - {slot_to_index['O'], slot_to_index['<pad>']})
+    sorted_labels = list(set(slot_label) - {slot_to_index['O'], slot_to_index['[PAD]']})
 
     intent_acc = accuracy_score(intent_label, intent_pred)
     slot_f1 = f1_score(slot_label,slot_pred,average='micro',labels=sorted_labels)
@@ -207,46 +195,30 @@ def evaluation_multi(model, dev_data_1, dev_data_2,config):
     losses_all = losses_slu + losses_slm
     return [intent_acc, slot_f1, slm_acc, slm_recall], [losses_all, losses_slm,losses_slu]
 
-def evaluation(model, dev_data, config):
+def test(model, test_data, config):
     model.eval()
-    dev_data_1, dev_data_2 = dev_data
+    test_data_1, test_data_2 = test_data
     index2slot = {v: k for k, v in model.slot_vocab.items()}
     preds = []
     labels = []
     hits = 0
     with torch.no_grad():
-        for i, batch in enumerate(data_loader(dev_data_1, 32, False)):
-            h, c, slot, intent = pad_to_batch(batch, model.vocab, model.slot_vocab)
+        for i, batch in enumerate(data_loader(test_data_1, 32, False)):
+            h, c, slot, intent,head = pad_to_batch(batch, model.vocab, model.slot_vocab)
             h = [hh.to(device) for hh in h]
             c = c.to(device)
             slot = slot.to(device)
             intent = intent.to(device)
             slot_p, intent_p = model(h, c)
 
-            preds.extend([index2slot[i] for i in slot_p.max(1)[1].tolist()])
-            labels.extend([index2slot[i] for i in slot.view(-1).tolist()])
+            preds.extend([index2slot[i] for i,h in zip(slot_p.max(1)[1].tolist(),head.view(-1).tolist()) if h==1])
+            labels.extend([index2slot[i] for i,h in zip(slot.view(-1).tolist(),head.view(-1).tolist()) if h==1])
             hits += torch.eq(intent_p.max(1)[1], intent.view(-1)).sum().item()
-        if config.slm_weight>0:
-            slm_label_all = []
-            slm_pred_all = []
-            for i, batch in enumerate(data_loader(dev_data_2, 32, False)):
-                slm_h, slm_candi, slm_label = pad_to_batch_slm(batch, model.vocab)
-                slm_h = [hh.to(device) for hh in slm_h]
-                slm_candi = [hh.to(device) for hh in slm_candi]
-                slm_label = slm_label.to(device)
-                slm_p = model(slm_h, slm_candi, slm=True).view(-1, 2)
-                slm_label_all.extend(slm_label.view(-1).tolist())
-                slm_pred_all.extend(slm_p.max(1)[1].tolist())
-
-            slm_acc = accuracy_score(slm_label_all, slm_pred_all)
-            slm_recall = recall_score(slm_label_all, slm_pred_all)
-            print('slm accuracy:\t%.5f' % slm_acc)
-            print('slm recall:\t%.5f' % slm_recall)
-    intent_acc = hits / len(dev_data_1)
+    intent_acc = hits / len(test_data_1)
     print('intent accuracy:\t%.5f' % intent_acc)
 
     sorted_labels = sorted(
-        list(set(labels) - {'O', '<pad>'}),
+        list(set(labels) - {'O', '[PAD]'}),
         key=lambda name: (name[1:], name[0])
     )
 
@@ -262,7 +234,7 @@ def model_init(built_vocab, config):
 
     word2index, slot2index, intent2index = built_vocab
     model = model_dic[config.model](len(word2index),config.embed_size,config.hidden_size,\
-                 len(slot2index),len(intent2index),word2index['<pad>'])
+                 len(slot2index),len(intent2index),word2index['[PAD]'])
     model.to(device)
 
     model.vocab = word2index
@@ -278,7 +250,7 @@ def model_load(config):
     print(checkpoint['config'])
     word2index, slot2index, intent2index = checkpoint['vocab'], checkpoint['slot_vocab'], checkpoint['intent_vocab']
     model = model_dic[config.model](len(word2index), config.embed_size, config.hidden_size, \
-                                    len(slot2index), len(intent2index), word2index['<pad>'])
+                                    len(slot2index), len(intent2index), word2index['[PAD]'])
     model.to(device)
     model.vocab = word2index
     model.slot_vocab = slot2index
