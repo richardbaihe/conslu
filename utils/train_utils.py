@@ -28,15 +28,14 @@ def train_multitask(model, train_data, dev_data, config,test_data=None):
     train_data_1, train_data_2 = train_data
     dev_data_1, dev_data_2 = dev_data
     test_data_1, test_data_2 = test_data
-    slm_num = 0
-
-    slm_pos = torch.tensor(0.0)
-    for data in train_data_2:
-        slm_num += data[-1].shape[-1]
-        slm_pos += torch.sum(data[-1]).type_as(torch.tensor(0.3))
-    neg_weight = slm_pos / slm_num
-    pos_weight = 1 - neg_weight
-    slm_loss_weight = torch.tensor([neg_weight, pos_weight]).cuda()
+    # slm_num = 0
+    # slm_pos = torch.tensor(0.0)
+    # for data in train_data_2:
+    #     slm_num += data[-1].shape[-1]
+    #     slm_pos += torch.sum(data[-1]).type_as(torch.tensor(0.3))
+    # neg_weight = slm_pos / slm_num
+    # pos_weight = 1 - neg_weight
+    # slm_loss_weight = torch.tensor([neg_weight, pos_weight]).cuda()
 
     slm_loss = nn.CrossEntropyLoss()#slm_loss_weight)
     slot_loss_function = nn.CrossEntropyLoss(ignore_index=0)
@@ -257,6 +256,48 @@ def evaluation(model, dev_data, config):
     print(metrics.flat_classification_report(
         labels, preds, labels=sorted_labels, digits=3
     ))
+
+def inference(model, test_data):
+    model.eval()
+    index2slot = {v: k for k, v in model.slot_vocab.items()}
+    index2word = {v: k for k, v in model.vocab.items()}
+    index2intent = {v: k for k, v in model.intent_vocab.items()}
+
+    f_temp = open('result.txt','w',encoding='utf-8')
+    with torch.no_grad():
+        for i, batch in enumerate(data_loader(test_data, 32, False)):
+            h, c, slot, intent = pad_to_batch(batch, model.vocab, model.slot_vocab)
+            h = [hh.to(device) for hh in h]
+            c = c.to(device)
+            slot = slot.to(device)
+            intent = intent.to(device)
+            slot_p, intent_p = model(h, c)
+
+            preds = [index2slot[i] for i in slot_p.max(1)[1].tolist()]
+            labels = [index2slot[i] for i in slot.view(-1).tolist()]
+            words = [index2word[i] for i in c.view(-1).tolist()]
+            intents_pred = [index2intent[i] for i in intent_p.max(1)[1].tolist()]
+            intents_label =[index2intent[i] for i in intent.view(-1).tolist()]
+
+            length = c.size(1)
+
+            for ip, il in zip(intents_pred, intents_label):
+                f_temp.write(ip+'\t'+il+'\n')
+                i = 0
+                while words[0] =='<pad>':
+                    preds.pop(0)
+                    labels.pop(0)
+                    words.pop(0)
+
+                while words!=[] and words[0]!='<pad>' and i<length:
+                    i+=1
+                    f_temp.write(words[0]+'\t'+preds[0]+'\t'+labels[0]+'\n')
+                    preds.pop(0)
+                    labels.pop(0)
+                    words.pop(0)
+                f_temp.write('\n')
+
+
 
 def model_init(built_vocab, config):
 

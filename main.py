@@ -36,6 +36,7 @@ def test(config):
     vocab = [model.vocab, model.slot_vocab, model.intent_vocab]
     test_data, test_slm_data = prepare_dataset(config.test_path, config, vocab)
     evaluation(model, (test_data,test_slm_data),config)
+    inference(model, test_data)
 
 if __name__ == "__main__":
     config = get_config()

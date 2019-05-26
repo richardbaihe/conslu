@@ -101,7 +101,6 @@ class SDEN(nn.Module):
 
         return slot_prob, intent_prob
 
-
 class Seq2Seq(SDEN):
     # simple seq2seq without any context information
     def forward(self, history, current, slm=False):
